@@ -1,16 +1,16 @@
 // src/trading/fsm.js
 
 const STATES = {
-  WAIT_FOR_SIGNAL: 'WAIT_FOR_SIGNAL',
-  BUYSIGNAL: 'BUYSIGNAL',
-  SELLSIGNAL: 'SELLSIGNAL',
-  BUYENTRY_WINDOW: 'BUYENTRY_WINDOW',
-  SELLENTRY_WINDOW: 'SELLENTRY_WINDOW',
-  BUYPROFIT_WINDOW: 'BUYPROFIT_WINDOW',
-  SELLPROFIT_WINDOW: 'SELLPROFIT_WINDOW',
-  WAIT_WINDOW: 'WAIT_WINDOW',
-  WAIT_FOR_BUYENTRY: 'WAIT_FOR_BUYENTRY',
-  WAIT_FOR_SELLENTRY: 'WAIT_FOR_SELLENTRY'
+  WAIT_FOR_SIGNAL: "WAIT_FOR_SIGNAL",
+  BUYSIGNAL: "BUYSIGNAL",
+  SELLSIGNAL: "SELLSIGNAL",
+  BUYENTRY_WINDOW: "BUYENTRY_WINDOW",
+  SELLENTRY_WINDOW: "SELLENTRY_WINDOW",
+  BUYPROFIT_WINDOW: "BUYPROFIT_WINDOW",
+  SELLPROFIT_WINDOW: "SELLPROFIT_WINDOW",
+  WAIT_WINDOW: "WAIT_WINDOW",
+  WAIT_FOR_BUYENTRY: "WAIT_FOR_BUYENTRY",
+  WAIT_FOR_SELLENTRY: "WAIT_FOR_SELLENTRY",
 };
 
 const WINDOW_MS = 60_000;
@@ -30,6 +30,9 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   // Position tracking
   // side: 'LONG' | 'SHORT' | null
   let position = null; // { side, qty, entryPrice, stop }
+
+  // Signal history (last 10 signals)
+  const signalHistory = [];
 
   // Timestamps and flags
   let lastTick = null;
@@ -56,7 +59,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   function transitionTo(next) {
     if (state !== next) {
-      logger.info({ from: state, to: next }, 'FSM state transition');
+      logger.info({ from: state, to: next }, "FSM state transition");
       state = next;
     }
   }
@@ -73,45 +76,88 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   function openLong(price, ts, reason) {
     if (positionIsOpen()) {
-      logger.warn({ position }, 'Tried to open LONG but position already open');
+      logger.warn({ position }, "Tried to open LONG but position already open");
       return;
     }
     const qty = computeOrderQty(price);
-    broker.placeLimitBuy(qty, price, { symbol, ts, reason: reason || 'OPEN_LONG' });
-    position = { side: 'LONG', qty, entryPrice: price, stop: null };
-    logger.info({ price, qty }, 'Opened LONG position');
+    broker.placeLimitBuy(qty, price, {
+      symbol,
+      ts,
+      reason: reason || "OPEN_LONG",
+    });
+    position = { side: "LONG", qty, entryPrice: price, stop: null };
+    logger.info({ price, qty }, "Opened LONG position");
   }
 
   function closeLong(price, ts, reason) {
-    if (!positionIsOpen() || position.side !== 'LONG') {
-      logger.warn({ position, reason }, 'Tried to close LONG but no LONG is open');
+    if (!positionIsOpen() || position.side !== "LONG") {
+      logger.warn(
+        { position, reason },
+        "Tried to close LONG but no LONG is open"
+      );
       return;
     }
-    broker.placeLimitSell(position.qty, price, { symbol, ts, reason: reason || 'CLOSE_LONG' });
+    broker.placeLimitSell(position.qty, price, {
+      symbol,
+      ts,
+      reason: reason || "CLOSE_LONG",
+    });
     const pnl = (price - position.entryPrice) * position.qty;
-    logger.info({ closePrice: price, entryPrice: position.entryPrice, qty: position.qty, pnl, reason }, 'Closed LONG');
+    logger.info(
+      {
+        closePrice: price,
+        entryPrice: position.entryPrice,
+        qty: position.qty,
+        pnl,
+        reason,
+      },
+      "Closed LONG"
+    );
     position = null;
   }
 
   function openShort(price, ts, reason) {
     if (positionIsOpen()) {
-      logger.warn({ position }, 'Tried to open SHORT but position already open');
+      logger.warn(
+        { position },
+        "Tried to open SHORT but position already open"
+      );
       return;
     }
     const qty = computeOrderQty(price);
-    broker.placeLimitSell(qty, price, { symbol, ts, reason: reason || 'OPEN_SHORT' });
-    position = { side: 'SHORT', qty, entryPrice: price, stop: null };
-    logger.info({ price, qty }, 'Opened SHORT position');
+    broker.placeLimitSell(qty, price, {
+      symbol,
+      ts,
+      reason: reason || "OPEN_SHORT",
+    });
+    position = { side: "SHORT", qty, entryPrice: price, stop: null };
+    logger.info({ price, qty }, "Opened SHORT position");
   }
 
   function closeShort(price, ts, reason) {
-    if (!positionIsOpen() || position.side !== 'SHORT') {
-      logger.warn({ position, reason }, 'Tried to close SHORT but no SHORT is open');
+    if (!positionIsOpen() || position.side !== "SHORT") {
+      logger.warn(
+        { position, reason },
+        "Tried to close SHORT but no SHORT is open"
+      );
       return;
     }
-    broker.placeLimitBuy(position.qty, price, { symbol, ts, reason: reason || 'CLOSE_SHORT' });
+    broker.placeLimitBuy(position.qty, price, {
+      symbol,
+      ts,
+      reason: reason || "CLOSE_SHORT",
+    });
     const pnl = (position.entryPrice - price) * position.qty;
-    logger.info({ closePrice: price, entryPrice: position.entryPrice, qty: position.qty, pnl, reason }, 'Closed SHORT');
+    logger.info(
+      {
+        closePrice: price,
+        entryPrice: position.entryPrice,
+        qty: position.qty,
+        pnl,
+        reason,
+      },
+      "Closed SHORT"
+    );
     position = null;
   }
 
@@ -134,25 +180,25 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     // Called when WAIT_WINDOW has fully elapsed (or immediately if remaining <= 0)
     // Decide next state based on who called WAIT_WINDOW originally
     switch (nowStateSource) {
-      case 'BUYENTRY_WINDOW': {
+      case "BUYENTRY_WINDOW": {
         // Go back to BUYENTRY_WINDOW with same anchors, and wait for first tick there
         buyEntryFirstTickPending = true;
         transitionTo(STATES.BUYENTRY_WINDOW);
         break;
       }
-      case 'SELLENTRY_WINDOW': {
+      case "SELLENTRY_WINDOW": {
         sellEntryFirstTickPending = true;
         transitionTo(STATES.SELLENTRY_WINDOW);
         break;
       }
-      case 'BUYPROFIT_WINDOW': {
+      case "BUYPROFIT_WINDOW": {
         // After WAIT_WINDOW from BUYPROFIT_WINDOW → WAIT_FOR_BUYENTRY (60s)
         waitForBuyEntryStartTs = ts ?? (lastTick ? lastTick.ts : Date.now());
         waitForBuyEntryFirstTickSeen = false;
         transitionTo(STATES.WAIT_FOR_BUYENTRY);
         break;
       }
-      case 'SELLPROFIT_WINDOW': {
+      case "SELLPROFIT_WINDOW": {
         // After WAIT_WINDOW from SELLPROFIT_WINDOW → WAIT_FOR_SELLENTRY (60s)
         waitForSellEntryStartTs = ts ?? (lastTick ? lastTick.ts : Date.now());
         waitForSellEntryFirstTickSeen = false;
@@ -160,7 +206,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         break;
       }
       default: {
-        logger.warn({ nowStateSource }, 'Unknown WAIT_WINDOW source, going to WAIT_FOR_SIGNAL');
+        logger.warn(
+          { nowStateSource },
+          "Unknown WAIT_WINDOW source, going to WAIT_FOR_SIGNAL"
+        );
         transitionTo(STATES.WAIT_FOR_SIGNAL);
       }
     }
@@ -173,23 +222,81 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   // --- Signal handlers ---
 
   function onBuySignal() {
-    // BUY signal only valid in WAIT_FOR_SIGNAL and WAIT_FOR_BUYENTRY
-    if (state === STATES.WAIT_FOR_SIGNAL || state === STATES.WAIT_FOR_BUYENTRY) {
-      buySignalFirstTickPending = true;
-      transitionTo(STATES.BUYSIGNAL);
-    } else {
-      logger.info({ state }, 'Ignoring BUY signal in this state');
+    // BUY signal should always reset and start fresh
+    logger.info(
+      { oldState: state, hasPosition: positionIsOpen() },
+      "New BUY signal received, resetting FSM"
+    );
+
+    // Close any open position first
+    if (positionIsOpen()) {
+      const closePrice = lastTick ? lastTick.ltp : 0;
+      if (position.side === "LONG") {
+        closeLong(closePrice, Date.now(), "NEW_SIGNAL_OVERRIDE");
+      } else if (position.side === "SHORT") {
+        closeShort(closePrice, Date.now(), "NEW_SIGNAL_OVERRIDE");
+      }
     }
+
+    // Track signal history
+    signalHistory.unshift({
+      ts: Date.now(),
+      side: "BUY",
+      state: state,
+    });
+    if (signalHistory.length > 10) signalHistory.pop();
+
+    // Reset all windows and flags
+    buyEntryWindowStartTs = null;
+    waitWindowStartTs = null;
+    waitWindowDurationMs = null;
+    waitWindowSource = null;
+    waitForBuyEntryStartTs = null;
+    waitForBuyEntryFirstTickSeen = false;
+    buyEntryFirstTickPending = false;
+
+    // Start fresh with new signal
+    buySignalFirstTickPending = true;
+    transitionTo(STATES.BUYSIGNAL);
   }
 
   function onSellSignal() {
-    // SELL signal only valid in WAIT_FOR_SIGNAL and WAIT_FOR_SELLENTRY
-    if (state === STATES.WAIT_FOR_SIGNAL || state === STATES.WAIT_FOR_SELLENTRY) {
-      sellSignalFirstTickPending = true;
-      transitionTo(STATES.SELLSIGNAL);
-    } else {
-      logger.info({ state }, 'Ignoring SELL signal in this state');
+    // SELL signal should always reset and start fresh
+    logger.info(
+      { oldState: state, hasPosition: positionIsOpen() },
+      "New SELL signal received, resetting FSM"
+    );
+
+    // Close any open position first
+    if (positionIsOpen()) {
+      const closePrice = lastTick ? lastTick.ltp : 0;
+      if (position.side === "LONG") {
+        closeLong(closePrice, Date.now(), "NEW_SIGNAL_OVERRIDE");
+      } else if (position.side === "SHORT") {
+        closeShort(closePrice, Date.now(), "NEW_SIGNAL_OVERRIDE");
+      }
     }
+
+    // Track signal history
+    signalHistory.unshift({
+      ts: Date.now(),
+      side: "SELL",
+      state: state,
+    });
+    if (signalHistory.length > 10) signalHistory.pop();
+
+    // Reset all windows and flags
+    sellEntryWindowStartTs = null;
+    waitWindowStartTs = null;
+    waitWindowDurationMs = null;
+    waitWindowSource = null;
+    waitForSellEntryStartTs = null;
+    waitForSellEntryFirstTickSeen = false;
+    sellEntryFirstTickPending = false;
+
+    // Start fresh with new signal
+    sellSignalFirstTickPending = true;
+    transitionTo(STATES.SELLSIGNAL);
   }
 
   // --- Tick handlers for each state ---
@@ -208,7 +315,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
     logger.info(
       { savedBUYLTP, buyEntryTrigger, buyStop },
-      'BUYSIGNAL first tick processed, entering BUYENTRY_WINDOW'
+      "BUYSIGNAL first tick processed, entering BUYENTRY_WINDOW"
     );
 
     transitionTo(STATES.BUYENTRY_WINDOW);
@@ -228,7 +335,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
     logger.info(
       { savedSELLLTP, sellEntryTrigger, sellStop },
-      'SELLSIGNAL first tick processed, entering SELLENTRY_WINDOW'
+      "SELLSIGNAL first tick processed, entering SELLENTRY_WINDOW"
     );
 
     transitionTo(STATES.SELLENTRY_WINDOW);
@@ -240,26 +347,27 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     buyEntryFirstTickPending = false;
 
     const { ltp, ts } = tick;
-    const elapsed = buyEntryWindowStartTs != null ? ts - buyEntryWindowStartTs : 0;
+    const elapsed =
+      buyEntryWindowStartTs != null ? ts - buyEntryWindowStartTs : 0;
     const remainingMs = WINDOW_MS - elapsed;
 
     if (ltp >= buyEntryTrigger) {
       // Open LONG and go to BUYPROFIT_WINDOW
-      openLong(ltp, ts, 'BUYENTRY_TRIGGER_HIT');
+      openLong(ltp, ts, "BUYENTRY_TRIGGER_HIT");
       position.stop = buyStop;
       buyProfitWindowStartTs = ts;
       logger.info(
         { ltp, buyEntryTrigger, buyStop },
-        'BUYENTRY_WINDOW: LONG opened, entering BUYPROFIT_WINDOW'
+        "BUYENTRY_WINDOW: LONG opened, entering BUYPROFIT_WINDOW"
       );
       transitionTo(STATES.BUYPROFIT_WINDOW);
     } else {
       // Entry fails, WAIT_WINDOW then back to BUYENTRY_WINDOW
       logger.info(
         { ltp, buyEntryTrigger, remainingMs },
-        'BUYENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to BUYENTRY_WINDOW'
+        "BUYENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to BUYENTRY_WINDOW"
       );
-      enterWaitWindow(remainingMs, 'BUYENTRY_WINDOW', ts);
+      enterWaitWindow(remainingMs, "BUYENTRY_WINDOW", ts);
     }
   }
 
@@ -269,91 +377,99 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     sellEntryFirstTickPending = false;
 
     const { ltp, ts } = tick;
-    const elapsed = sellEntryWindowStartTs != null ? ts - sellEntryWindowStartTs : 0;
+    const elapsed =
+      sellEntryWindowStartTs != null ? ts - sellEntryWindowStartTs : 0;
     const remainingMs = WINDOW_MS - elapsed;
 
     if (ltp <= sellEntryTrigger) {
       // Open SHORT and go to SELLPROFIT_WINDOW
-      openShort(ltp, ts, 'SELLENTRY_TRIGGER_HIT');
+      openShort(ltp, ts, "SELLENTRY_TRIGGER_HIT");
       position.stop = sellStop;
       sellProfitWindowStartTs = ts;
       logger.info(
         { ltp, sellEntryTrigger, sellStop },
-        'SELLENTRY_WINDOW: SHORT opened, entering SELLPROFIT_WINDOW'
+        "SELLENTRY_WINDOW: SHORT opened, entering SELLPROFIT_WINDOW"
       );
       transitionTo(STATES.SELLPROFIT_WINDOW);
     } else {
       // Entry fails, WAIT_WINDOW then back to SELLENTRY_WINDOW
       logger.info(
         { ltp, sellEntryTrigger, remainingMs },
-        'SELLENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to SELLENTRY_WINDOW'
+        "SELLENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to SELLENTRY_WINDOW"
       );
-      enterWaitWindow(remainingMs, 'SELLENTRY_WINDOW', ts);
+      enterWaitWindow(remainingMs, "SELLENTRY_WINDOW", ts);
     }
   }
 
   // 3.6 BUYPROFIT_WINDOW
   function handleBuyProfitWindowTick(tick) {
-    if (!positionIsOpen() || position.side !== 'LONG') return;
+    if (!positionIsOpen() || position.side !== "LONG") return;
 
     const { ltp, ts } = tick;
     const stop = position.stop ?? buyStop;
-    const elapsed = buyProfitWindowStartTs != null ? ts - buyProfitWindowStartTs : 0;
+    const elapsed =
+      buyProfitWindowStartTs != null ? ts - buyProfitWindowStartTs : 0;
 
     if (ltp <= stop) {
       // Hit stop-loss: close position, WAIT_WINDOW, then WAIT_FOR_BUYENTRY
-      closeLong(ltp, ts, 'BUYPROFIT_STOP_HIT');
+      closeLong(ltp, ts, "BUYPROFIT_STOP_HIT");
       const remainingMs = WINDOW_MS - elapsed;
       logger.info(
         { ltp, stop, remainingMs },
-        'BUYPROFIT_WINDOW: stop hit, entering WAIT_WINDOW then WAIT_FOR_BUYENTRY'
+        "BUYPROFIT_WINDOW: stop hit, entering WAIT_WINDOW then WAIT_FOR_BUYENTRY"
       );
-      enterWaitWindow(remainingMs, 'BUYPROFIT_WINDOW', ts);
+      enterWaitWindow(remainingMs, "BUYPROFIT_WINDOW", ts);
       return;
     }
 
     // 60s profit window elapsed without hitting stop → restart 60s window
     if (elapsed >= WINDOW_MS) {
       buyProfitWindowStartTs = ts;
-      logger.info('BUYPROFIT_WINDOW: 60s elapsed without stop, restarting profit window');
+      logger.info(
+        "BUYPROFIT_WINDOW: 60s elapsed without stop, restarting profit window"
+      );
     }
   }
 
   // 3.7 SELLPROFIT_WINDOW
   function handleSellProfitWindowTick(tick) {
-    if (!positionIsOpen() || position.side !== 'SHORT') return;
+    if (!positionIsOpen() || position.side !== "SHORT") return;
 
     const { ltp, ts } = tick;
     const stop = position.stop ?? sellStop;
-    const elapsed = sellProfitWindowStartTs != null ? ts - sellProfitWindowStartTs : 0;
+    const elapsed =
+      sellProfitWindowStartTs != null ? ts - sellProfitWindowStartTs : 0;
 
     if (ltp >= stop) {
       // Hit stop-loss: close, WAIT_WINDOW, then WAIT_FOR_SELLENTRY
-      closeShort(ltp, ts, 'SELLPROFIT_STOP_HIT');
+      closeShort(ltp, ts, "SELLPROFIT_STOP_HIT");
       const remainingMs = WINDOW_MS - elapsed;
       logger.info(
         { ltp, stop, remainingMs },
-        'SELLPROFIT_WINDOW: stop hit, entering WAIT_WINDOW then WAIT_FOR_SELLENTRY'
+        "SELLPROFIT_WINDOW: stop hit, entering WAIT_WINDOW then WAIT_FOR_SELLENTRY"
       );
-      enterWaitWindow(remainingMs, 'SELLPROFIT_WINDOW', ts);
+      enterWaitWindow(remainingMs, "SELLPROFIT_WINDOW", ts);
       return;
     }
 
     if (elapsed >= WINDOW_MS) {
       sellProfitWindowStartTs = ts;
-      logger.info('SELLPROFIT_WINDOW: 60s elapsed without stop, restarting profit window');
+      logger.info(
+        "SELLPROFIT_WINDOW: 60s elapsed without stop, restarting profit window"
+      );
     }
   }
 
   // 3.8 WAIT_WINDOW
   function handleWaitWindowTick(tick) {
-    if (!waitWindowStartTs || waitWindowDurationMs == null || !waitWindowSource) return;
+    if (!waitWindowStartTs || waitWindowDurationMs == null || !waitWindowSource)
+      return;
     const { ts } = tick;
     const elapsed = ts - waitWindowStartTs;
     if (elapsed >= waitWindowDurationMs) {
       logger.info(
         { waitWindowSource },
-        'WAIT_WINDOW: duration completed, leaving WAIT_WINDOW'
+        "WAIT_WINDOW: duration completed, leaving WAIT_WINDOW"
       );
       const source = waitWindowSource;
       // Clear first to avoid recursion confusion
@@ -377,12 +493,12 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       waitForBuyEntryFirstTickSeen = true;
 
       if (ltp >= buyEntryTrigger) {
-        openLong(ltp, ts, 'WAIT_FOR_BUYENTRY_TRIGGER_HIT');
+        openLong(ltp, ts, "WAIT_FOR_BUYENTRY_TRIGGER_HIT");
         position.stop = buyStop;
         buyProfitWindowStartTs = ts;
         logger.info(
           { ltp, buyEntryTrigger, buyStop },
-          'WAIT_FOR_BUYENTRY: LONG opened, entering BUYPROFIT_WINDOW'
+          "WAIT_FOR_BUYENTRY: LONG opened, entering BUYPROFIT_WINDOW"
         );
         transitionTo(STATES.BUYPROFIT_WINDOW);
         return;
@@ -393,7 +509,9 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     if (elapsed >= WINDOW_MS) {
       waitForBuyEntryStartTs = ts;
       waitForBuyEntryFirstTickSeen = false;
-      logger.info('WAIT_FOR_BUYENTRY: 60s elapsed, restarting WAIT_FOR_BUYENTRY window');
+      logger.info(
+        "WAIT_FOR_BUYENTRY: 60s elapsed, restarting WAIT_FOR_BUYENTRY window"
+      );
     }
   }
 
@@ -410,12 +528,12 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       waitForSellEntryFirstTickSeen = true;
 
       if (ltp <= sellEntryTrigger) {
-        openShort(ltp, ts, 'WAIT_FOR_SELLENTRY_TRIGGER_HIT');
+        openShort(ltp, ts, "WAIT_FOR_SELLENTRY_TRIGGER_HIT");
         position.stop = sellStop;
         sellProfitWindowStartTs = ts;
         logger.info(
           { ltp, sellEntryTrigger, sellStop },
-          'WAIT_FOR_SELLENTRY: SHORT opened, entering SELLPROFIT_WINDOW'
+          "WAIT_FOR_SELLENTRY: SHORT opened, entering SELLPROFIT_WINDOW"
         );
         transitionTo(STATES.SELLPROFIT_WINDOW);
         return;
@@ -425,7 +543,9 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     if (elapsed >= WINDOW_MS) {
       waitForSellEntryStartTs = ts;
       waitForSellEntryFirstTickSeen = false;
-      logger.info('WAIT_FOR_SELLENTRY: 60s elapsed, restarting WAIT_FOR_SELLENTRY window');
+      logger.info(
+        "WAIT_FOR_SELLENTRY: 60s elapsed, restarting WAIT_FOR_SELLENTRY window"
+      );
     }
   }
 
@@ -474,19 +594,20 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   signalBus.onBuy(onBuySignal);
   signalBus.onSell(onSellSignal);
 
-  logger.info({ state, symbol }, 'FSM initialized with updated spec');
+  logger.info({ state, symbol }, "FSM initialized with updated spec");
 
   return {
     onTick,
     getState: () => state,
     getPosition: () => position,
+    getSignalHistory: () => signalHistory,
     getAnchors: () => ({
       savedBUYLTP,
       savedSELLLTP,
       buyEntryTrigger,
       buyStop,
       sellEntryTrigger,
-      sellStop
-    })
+      sellStop,
+    }),
   };
 }

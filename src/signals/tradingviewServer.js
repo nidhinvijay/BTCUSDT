@@ -26,8 +26,10 @@ async function broadcastToRelays(event, logger) {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
+        // Get error response body to understand what went wrong
+        const errorText = await response.text().catch(() => "No error body");
         logger.warn(
-          { url, status: response.status },
+          { url, status: response.status, errorBody: errorText },
           "Relay responded with error status"
         );
       } else {
@@ -109,6 +111,7 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
     // Relay to external endpoints (async, non-blocking)
     broadcastToRelays(
       {
+        message: message, // Send in webhook-compatible format
         type: "tradingview-signal",
         side,
         rawMessage: message,
@@ -125,9 +128,10 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
     const state = fsm?.getState?.() ?? "UNKNOWN";
     const position = fsm?.getPosition?.() ?? null;
     const anchors = fsm?.getAnchors?.() ?? null;
+    const signalHistory = fsm?.getSignalHistory?.() ?? [];
     const pnl = pnlContext?.getSnapshot?.() ?? null;
 
-    res.json({ state, position, anchors, pnl });
+    res.json({ state, position, anchors, signalHistory, pnl });
   });
 
   // ------------------------------------------------------------
@@ -171,6 +175,11 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
       <div id="cards">Loading...</div>
 
       <div class="grid">
+        <div class="card" style="grid-column:1/-1;">
+          <div class="label">Signal History (Last 10)</div>
+          <div id="signals-table">No signals yet.</div>
+        </div>
+
         <div class="card" style="grid-column:1/-1;">
           <div class="label">Trades</div>
           <div id="trades-table">No trades yet.</div>
@@ -233,6 +242,18 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
             }).join('') + '</tbody></table>';
         }
 
+        function renderSignals(s){
+          const h=document.getElementById('signals-table');
+          const list=s||[];
+          if(!list.length){ h.textContent='No signals yet.'; return; }
+          h.innerHTML = '<table><thead><tr><th>Time</th><th>Side</th><th>FSM State</th></tr></thead><tbody>' +
+            list.map(r=>{
+              const ts=new Date(r.ts).toLocaleString();
+              const sideClass=r.side==='BUY'?'pnl-pos':'pnl-neg';
+              return \`<tr><td>\${ts}</td><td class="\${sideClass}">\${r.side}</td><td>\${r.state}</td></tr>\`;
+            }).join('') + '</tbody></table>';
+        }
+
         function renderRelays(d){
           const h=document.getElementById('relays-list');
           const list=d.relays||[];
@@ -245,7 +266,7 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
 
         async function refresh(){
           const [s,r]=await Promise.all([status(),relays()]);
-          renderCards(s); renderTrades(s.pnl); renderRelays(r);
+          renderCards(s); renderSignals(s.signalHistory); renderTrades(s.pnl); renderRelays(r);
         }
 
         document.addEventListener('DOMContentLoaded',()=>{

@@ -125,13 +125,23 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
   //  Status API (FSM state, anchors, PnL, position)
   // ------------------------------------------------------------
   app.get("/status", (req, res) => {
-    const state = fsm?.getState?.() ?? "UNKNOWN";
-    const position = fsm?.getPosition?.() ?? null;
+    const buyState = fsm?.getBuyState?.() ?? "UNKNOWN";
+    const sellState = fsm?.getSellState?.() ?? "UNKNOWN";
+    const longPosition = fsm?.getLongPosition?.() ?? null;
+    const shortPosition = fsm?.getShortPosition?.() ?? null;
     const anchors = fsm?.getAnchors?.() ?? null;
     const signalHistory = fsm?.getSignalHistory?.() ?? [];
     const pnl = pnlContext?.getSnapshot?.() ?? null;
 
-    res.json({ state, position, anchors, signalHistory, pnl });
+    res.json({
+      buyState,
+      sellState,
+      longPosition,
+      shortPosition,
+      anchors,
+      signalHistory,
+      pnl,
+    });
   });
 
   // ------------------------------------------------------------
@@ -153,7 +163,7 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
           }
           h1 { margin-top: 0; font-size: 24px; }
           .sub { color: #9a9a9a; font-size: 12px; margin-bottom: 12px; }
-          .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; margin-bottom: 16px; }
+          .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; margin-bottom: 16px; }
           .card { background: #15151b; border-radius: 12px; padding: 16px; box-shadow: 0 0 12px rgba(0,0,0,0.45); }
           .label { font-size: 11px; text-transform: uppercase; color: #9a9a9a; margin-bottom: 4px; letter-spacing: 0.08em; }
           .value { font-size: 18px; }
@@ -176,13 +186,13 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
 
       <div class="grid">
         <div class="card" style="grid-column:1/-1;">
-          <div class="label">Signal History (Last 10)</div>
-          <div id="signals-table">No signals yet.</div>
+          <div class="label">Trades</div>
+          <div id="trades-table">No trades yet.</div>
         </div>
 
         <div class="card" style="grid-column:1/-1;">
-          <div class="label">Trades</div>
-          <div id="trades-table">No trades yet.</div>
+          <div class="label">Signal History (Last 10)</div>
+          <div id="signals-table">No signals yet.</div>
         </div>
 
         <div class="card" style="grid-column:1/-1;">
@@ -204,31 +214,31 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
         async function rmRelay(url){ return (await fetch('/relays',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})).json(); }
 
         function renderCards(d){
-          const p=d.pnl||{}, pos=d.position||{}, a=d.anchors||{};
-          document.getElementById('cards').innerHTML = \`
-            <div class="grid">
-              <div class="card"><div class="label">FSM State</div><div class="value">\${d.state}</div></div>
-              <div class="card"><div class="label">Position</div>
-                <div>Side: \${pos.side||'-'}</div><div>Qty:\${pos.qty||0}</div>
-                <div>Entry: \${pos.entryPrice||'-'}</div>
-              </div>
-              <div class="card"><div class="label">Anchors</div>
-                <div>Buy Trigger:\${a.buyEntryTrigger??'-'}</div>
-                <div>Buy Stop:\${a.buyStop??'-'}</div>
-                <div>Sell Trigger:\${a.sellEntryTrigger??'-'}</div>
-                <div>Sell Stop:\${a.sellStop??'-'}</div>
-              </div>
-              <div class="card"><div class="label">P&L</div>
-                <div>Side: \${p.positionSide||'None'}</div>
-                <div>Qty: \${p.positionQty||0}</div>
-                <div>Avg Price: \${p.avgPrice?p.avgPrice.toFixed(2):'-'}</div>
-                <div>Last: \${p.lastPrice||'-'}</div>
-                <div class="\${cls(p.realizedPnl)}">Realized: \${fmt(p.realizedPnl)}</div>
-                <div class="\${cls(p.unrealizedPnl)}">Unrealized: \${fmt(p.unrealizedPnl)}</div>
-                <div class="\${cls(p.totalPnl)}">Total: \${fmt(p.totalPnl)}</div>
-                <div>Trades: \${p.tradeCount||0}</div>
-              </div>
-            </div>\`;
+          const p=d.pnl||{}, lp=d.longPosition||{}, sp=d.shortPosition||{}, a=d.anchors||{};
+          document.getElementById('cards').innerHTML = '<div class="grid">' +
+            '<div class="card"><div class="label">BUY FSM State</div><div class="value">' + d.buyState + '</div></div>' +
+            '<div class="card"><div class="label">SELL FSM State</div><div class="value">' + d.sellState + '</div></div>' +
+            '<div class="card"><div class="label">LONG Position</div>' +
+            '<div>Side: ' + (lp.side||'-') + '</div><div>Qty: ' + (lp.qty||0) + '</div>' +
+            '<div>Entry: ' + (lp.entryPrice||'-') + '</div></div>' +
+            '<div class="card"><div class="label">SHORT Position</div>' +
+            '<div>Side: ' + (sp.side||'-') + '</div><div>Qty: ' + (sp.qty||0) + '</div>' +
+            '<div>Entry: ' + (sp.entryPrice||'-') + '</div></div>' +
+            '<div class="card"><div class="label">Anchors</div>' +
+            '<div>Buy Trigger: ' + (a.buyEntryTrigger??'-') + '</div>' +
+            '<div>Buy Stop: ' + (a.buyStop??'-') + '</div>' +
+            '<div>Sell Trigger: ' + (a.sellEntryTrigger??'-') + '</div>' +
+            '<div>Sell Stop: ' + (a.sellStop??'-') + '</div></div>' +
+            '<div class="card"><div class="label">P&L</div>' +
+            '<div>Side: ' + (p.positionSide||'None') + '</div>' +
+            '<div>Qty: ' + (p.positionQty||0) + '</div>' +
+            '<div>Avg Price: ' + (p.avgPrice?p.avgPrice.toFixed(2):'-') + '</div>' +
+            '<div>Last: ' + (p.lastPrice||'-') + '</div>' +
+            '<div class="' + cls(p.realizedPnl) + '">Realized: ' + fmt(p.realizedPnl) + '</div>' +
+            '<div class="' + cls(p.unrealizedPnl) + '">Unrealized: ' + fmt(p.unrealizedPnl) + '</div>' +
+            '<div class="' + cls(p.totalPnl) + '">Total: ' + fmt(p.totalPnl) + '</div>' +
+            '<div>Trades: ' + (p.tradeCount||0) + '</div>' +
+            '</div></div>';
         }
 
         function renderTrades(p){

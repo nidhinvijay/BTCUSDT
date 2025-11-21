@@ -23,19 +23,76 @@ export function createPnlContext({ symbol }) {
     return 0;
   }
 
+  function getClosedTrades() {
+    return trades.filter((t) => t.type === "CLOSE");
+  }
+
+  function calculateMetrics() {
+    const closedTrades = getClosedTrades();
+    const totalPnl = realizedPnl + getUnrealizedPnl();
+
+    // Win rate
+    const winningTrades = closedTrades.filter((t) => t.pnl > 0);
+    const losingTrades = closedTrades.filter((t) => t.pnl < 0);
+    const winRate =
+      closedTrades.length > 0
+        ? (winningTrades.length / closedTrades.length) * 100
+        : 0;
+
+    // Profit factor
+    const totalWins = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
+    const totalLosses = Math.abs(
+      losingTrades.reduce((sum, t) => sum + t.pnl, 0)
+    );
+    const profitFactor = totalLosses > 0 ? totalWins / totalLosses : 0;
+
+    // Best and worst trades
+    let bestTrade = 0;
+    let worstTrade = 0;
+    if (closedTrades.length > 0) {
+      bestTrade = Math.max(...closedTrades.map((t) => t.pnl || 0));
+      worstTrade = Math.min(...closedTrades.map((t) => t.pnl || 0));
+    }
+
+    // Average trade PnL
+    const avgTradePnl =
+      closedTrades.length > 0 ? realizedPnl / closedTrades.length : 0;
+
+    // PnL percentage (relative to initial capital assumption: $1000)
+    const initialCapital = 1000; // Default assumption
+    const pnlPercentage = (totalPnl / initialCapital) * 100;
+
+    return {
+      winRate: Number(winRate.toFixed(2)),
+      profitFactor: Number(profitFactor.toFixed(2)),
+      bestTrade: Number(bestTrade.toFixed(2)),
+      worstTrade: Number(worstTrade.toFixed(2)),
+      avgTradePnl: Number(avgTradePnl.toFixed(2)),
+      pnlPercentage: Number(pnlPercentage.toFixed(2)),
+      totalWins: Number(totalWins.toFixed(2)),
+      totalLosses: Number(totalLosses.toFixed(2)),
+      winCount: winningTrades.length,
+      lossCount: losingTrades.length,
+    };
+  }
+
   function snapshot() {
     const unrealizedPnl = getUnrealizedPnl();
+    const totalPnl = realizedPnl + unrealizedPnl;
+    const metrics = calculateMetrics();
+
     return {
       symbol,
       positionQty,
       positionSide,
       avgPrice,
       lastPrice,
-      realizedPnl,
-      unrealizedPnl,
-      totalPnl: realizedPnl + unrealizedPnl,
+      realizedPnl: Number(realizedPnl.toFixed(2)),
+      unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
+      totalPnl: Number(totalPnl.toFixed(2)),
       tradeCount,
       trades,
+      metrics,
     };
   }
 

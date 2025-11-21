@@ -214,31 +214,34 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
         async function rmRelay(url){ return (await fetch('/relays',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})).json(); }
 
         function renderCards(d){
-          const p=d.pnl||{}, lp=d.longPosition||{}, sp=d.shortPosition||{}, a=d.anchors||{};
+          const p=d.pnl||{}, lp=d.longPosition||{}, sp=d.shortPosition||{}, a=d.anchors||{}, m=p.metrics||{};
+          const posStr = (lp.side ? 'LONG '+fmt(lp.qty)+' @ '+fmt(lp.entryPrice) : (sp.side ? 'SHORT '+fmt(sp.qty)+' @ '+fmt(sp.entryPrice) : 'None'));
+          
           document.getElementById('cards').innerHTML = '<div class="grid">' +
             '<div class="card"><div class="label">BUY FSM State</div><div class="value">' + d.buyState + '</div></div>' +
             '<div class="card"><div class="label">SELL FSM State</div><div class="value">' + d.sellState + '</div></div>' +
-            '<div class="card"><div class="label">LONG Position</div>' +
-            '<div>Side: ' + (lp.side||'-') + '</div><div>Qty: ' + (lp.qty||0) + '</div>' +
-            '<div>Entry: ' + (lp.entryPrice||'-') + '</div></div>' +
-            '<div class="card"><div class="label">SHORT Position</div>' +
-            '<div>Side: ' + (sp.side||'-') + '</div><div>Qty: ' + (sp.qty||0) + '</div>' +
-            '<div>Entry: ' + (sp.entryPrice||'-') + '</div></div>' +
+            '<div class="card"><div class="label">Open Position</div>' +
+            '<div>' + posStr + '</div>' +
+            '<div>Last Price: ' + fmt(p.lastPrice) + '</div></div>' +
+            
+            '<div class="card"><div class="label">P&L Summary</div>' +
+            '<div class="' + cls(p.realizedPnl) + '"><strong>Realized:</strong> ' + fmt(p.realizedPnl) + ' USDT</div>' +
+            '<div class="' + cls(p.unrealizedPnl) + '"><strong>Unrealized:</strong> ' + fmt(p.unrealizedPnl) + ' USDT</div>' +
+            '<div class="' + cls(p.totalPnl) + '"><strong>Total:</strong> ' + fmt(p.totalPnl) + ' USDT</div>' +
+            '<div class="' + cls(m.pnlPercentage) + '"><strong>Return:</strong> ' + fmt(m.pnlPercentage) + '%</div>' +
+            '<hr style="border:none;border-top:1px solid #333;margin:8px 0;">' +
+            '<div><strong>Total Trades:</strong> ' + (p.tradeCount||0) + ' | <strong>Win Rate:</strong> ' + fmt(m.winRate) + '%</div>' +
+            '<div><strong>Wins/Losses:</strong> ' + (m.winCount||0) + 'W / ' + (m.lossCount||0) + 'L | <strong>Profit Factor:</strong> ' + fmt(m.profitFactor) + '</div>' +
+            '<div><strong>Avg Trade:</strong> ' + fmt(m.avgTradePnl) + ' USDT</div>' +
+            '<div class="pnl-pos"><strong>Best Trade:</strong> ' + fmt(m.bestTrade) + ' USDT</div>' +
+            '<div class="pnl-neg"><strong>Worst Trade:</strong> ' + fmt(m.worstTrade) + ' USDT</div>' +
+            '<div><strong>Total Wins:</strong> ' + fmt(m.totalWins) + ' USDT | <strong>Total Losses:</strong> ' + fmt(m.totalLosses) + ' USDT</div></div>' +
+            
             '<div class="card"><div class="label">Anchors</div>' +
-            '<div>Buy Trigger: ' + (a.buyEntryTrigger??'-') + '</div>' +
+            '<div>Buy Entry: ' + (a.buyEntryTrigger??'-') + '</div>' +
             '<div>Buy Stop: ' + (a.buyStop??'-') + '</div>' +
-            '<div>Sell Trigger: ' + (a.sellEntryTrigger??'-') + '</div>' +
-            '<div>Sell Stop: ' + (a.sellStop??'-') + '</div></div>' +
-            '<div class="card"><div class="label">P&L</div>' +
-            '<div>Side: ' + (p.positionSide||'None') + '</div>' +
-            '<div>Qty: ' + (p.positionQty||0) + '</div>' +
-            '<div>Avg Price: ' + (p.avgPrice?p.avgPrice.toFixed(2):'-') + '</div>' +
-            '<div>Last: ' + (p.lastPrice||'-') + '</div>' +
-            '<div class="' + cls(p.realizedPnl) + '">Realized: ' + fmt(p.realizedPnl) + '</div>' +
-            '<div class="' + cls(p.unrealizedPnl) + '">Unrealized: ' + fmt(p.unrealizedPnl) + '</div>' +
-            '<div class="' + cls(p.totalPnl) + '">Total: ' + fmt(p.totalPnl) + '</div>' +
-            '<div>Trades: ' + (p.tradeCount||0) + '</div>' +
-            '</div></div>';
+            '<div>Sell Entry: ' + (a.sellEntryTrigger??'-') + '</div>' +
+            '<div>Sell Stop: ' + (a.sellStop??'-') + '</div></div></div>';
         }
 
         function renderTrades(p){

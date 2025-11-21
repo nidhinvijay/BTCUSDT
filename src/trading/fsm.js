@@ -569,6 +569,83 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     "FSM initialized with DUAL (independent BUY/SELL) spec"
   );
 
+  // --- Persistence ---
+  
+  function getState() {
+    return {
+      buyState,
+      sellState,
+      savedBUYLTP,
+      savedSELLLTP,
+      buyEntryTrigger,
+      buyStop,
+      sellEntryTrigger,
+      sellStop,
+      longPosition,
+      shortPosition,
+      signalHistory,
+      // Timers
+      buyEntryWindowStartTs,
+      sellEntryWindowStartTs,
+      buyProfitWindowStartTs,
+      sellProfitWindowStartTs,
+      waitWindowStartTs,
+      waitWindowDurationMs,
+      waitWindowSource,
+      waitForBuyEntryStartTs,
+      waitForBuyEntryFirstTickSeen,
+      waitForSellEntryStartTs,
+      waitForSellEntryFirstTickSeen,
+      buySignalFirstTickPending,
+      sellSignalFirstTickPending,
+      buyEntryFirstTickPending,
+      sellEntryFirstTickPending,
+    };
+  }
+
+  function restoreState(state) {
+    if (!state) return;
+    logger.info({ state }, "Restoring FSM state...");
+    
+    buyState = state.buyState || STATES.WAIT_FOR_SIGNAL;
+    sellState = state.sellState || STATES.WAIT_FOR_SIGNAL;
+    
+    savedBUYLTP = state.savedBUYLTP;
+    savedSELLLTP = state.savedSELLLTP;
+    buyEntryTrigger = state.buyEntryTrigger;
+    buyStop = state.buyStop;
+    sellEntryTrigger = state.sellEntryTrigger;
+    sellStop = state.sellStop;
+    
+    longPosition = state.longPosition;
+    shortPosition = state.shortPosition;
+    
+    if (state.signalHistory) {
+      signalHistory.length = 0;
+      signalHistory.push(...state.signalHistory);
+    }
+
+    buyEntryWindowStartTs = state.buyEntryWindowStartTs;
+    sellEntryWindowStartTs = state.sellEntryWindowStartTs;
+    buyProfitWindowStartTs = state.buyProfitWindowStartTs;
+    sellProfitWindowStartTs = state.sellProfitWindowStartTs;
+    
+    waitWindowStartTs = state.waitWindowStartTs;
+    waitWindowDurationMs = state.waitWindowDurationMs;
+    waitWindowSource = state.waitWindowSource;
+    
+    waitForBuyEntryStartTs = state.waitForBuyEntryStartTs;
+    waitForBuyEntryFirstTickSeen = state.waitForBuyEntryFirstTickSeen;
+    
+    waitForSellEntryStartTs = state.waitForSellEntryStartTs;
+    waitForSellEntryFirstTickSeen = state.waitForSellEntryFirstTickSeen;
+    
+    buySignalFirstTickPending = state.buySignalFirstTickPending;
+    sellSignalFirstTickPending = state.sellSignalFirstTickPending;
+    buyEntryFirstTickPending = state.buyEntryFirstTickPending;
+    sellEntryFirstTickPending = state.sellEntryFirstTickPending;
+  }
+
   return {
     onTick,
     getBuyState: () => buyState,
@@ -584,5 +661,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       sellEntryTrigger,
       sellStop,
     }),
+    getState,
+    restoreState
   };
 }

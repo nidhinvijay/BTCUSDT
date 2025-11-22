@@ -36,7 +36,7 @@ async function main() {
   });
 
   // 3. Resume State
-  if (resumeState(fsm, sessionManager, symbol)) {
+  if (resumeState(fsm, sessionManager, pnlContext, symbol)) {
     logger.info("State resumed successfully.");
   } else {
     logger.info("No saved state found, starting fresh.");
@@ -101,16 +101,32 @@ async function main() {
     });
   }, 1000);
 
-  // 5. Auto-Save State
-  setInterval(() => {
+  // 5. Auto-Save State & Immediate Save Helper
+  const saveState = () => {
     const stateToSave = {
       fsm: fsm.getState(),
       session: sessionManager.getState(),
+      pnl: pnlContext.getState(),
       timestamp: Date.now()
     };
     upsertMachineState(symbol, stateToSave);
+  };
+
+  // Periodic Save
+  setInterval(() => {
+    saveState();
     // logger.info("State auto-saved."); // Verbose
   }, 60000);
+
+  // Immediate Save on Critical Events (Signals)
+  signalBus.onBuy(() => {
+    logger.info("Immediate state save triggered by BUY signal");
+    saveState();
+  });
+  signalBus.onSell(() => {
+    logger.info("Immediate state save triggered by SELL signal");
+    saveState();
+  });
 
   // 6. Binance market stream (ticks)
   startMarketStream({

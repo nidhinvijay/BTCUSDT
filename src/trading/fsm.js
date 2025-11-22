@@ -239,7 +239,18 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   // --- Signal handlers ---
 
   function onBuySignal() {
-    // BUY signal can be accepted anytime - start fresh
+    // New BUY signal received
+    // 1. Check if we are already LONG. If so, force close to "Restart" logic.
+    if (longIsOpen()) {
+      if (lastTick) {
+        logger.info("New BUY signal received while LONG. Force closing old position.");
+        closeLong(lastTick.ltp, lastTick.ts, "SIGNAL_OVERRIDE");
+      } else {
+        logger.warn("New BUY signal received while LONG, but no lastTick to close with. Position remains open (risky).");
+      }
+    }
+
+    // 2. Start fresh for the new signal
     buySignalFirstTickPending = true;
     // Track signal in history
     signalHistory.unshift({
@@ -252,7 +263,18 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   }
 
   function onSellSignal() {
-    // SELL signal can be accepted anytime - start fresh
+    // New SELL signal received
+    // 1. Check if we are already SHORT. If so, force close to "Restart" logic.
+    if (shortIsOpen()) {
+      if (lastTick) {
+        logger.info("New SELL signal received while SHORT. Force closing old position.");
+        closeShort(lastTick.ltp, lastTick.ts, "SIGNAL_OVERRIDE");
+      } else {
+        logger.warn("New SELL signal received while SHORT, but no lastTick to close with. Position remains open (risky).");
+      }
+    }
+
+    // 2. Start fresh for the new signal
     sellSignalFirstTickPending = true;
     // Track signal in history
     signalHistory.unshift({

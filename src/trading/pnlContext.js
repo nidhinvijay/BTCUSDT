@@ -213,5 +213,30 @@ export function createPnlContext({ symbol }) {
       }
       return snapshot();
     },
+
+    // --- Persistence ---
+    getState() {
+      return {
+        positionQty,
+        avgPrice,
+        positionSide,
+        realizedPnl,
+        tradeCount,
+        trades
+      };
+    },
+
+    restoreState(state) {
+      if (!state) return;
+      positionQty = state.positionQty || 0;
+      avgPrice = state.avgPrice || 0;
+      positionSide = state.positionSide || null;
+      realizedPnl = state.realizedPnl || 0;
+      tradeCount = state.tradeCount || 0;
+      if (state.trades && Array.isArray(state.trades)) {
+        trades.length = 0;
+        trades.push(...state.trades);
+      }
+    }
   };
 }

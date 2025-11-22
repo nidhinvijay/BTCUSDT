@@ -1,7 +1,7 @@
 // src/utils/resumer.js
 import { readMachineState } from './stateStore.js';
 
-export function resumeState(fsm, sessionManager, symbol) {
+export function resumeState(fsm, sessionManager, pnlContext, symbol) {
   const savedState = readMachineState(symbol);
   
   if (savedState) {
@@ -15,6 +15,10 @@ export function resumeState(fsm, sessionManager, symbol) {
       // Restore session state manually since SessionManager doesn't have a bulk restore
       // We assume sessionManager state structure matches saved structure
       Object.assign(sessionManager.state, savedState.session);
+    }
+
+    if (savedState.pnl && pnlContext) {
+      pnlContext.restoreState(savedState.pnl);
     }
     
     return true;

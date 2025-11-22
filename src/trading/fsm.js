@@ -84,9 +84,8 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   }
 
   function computeOrderQty(price) {
-    const notional = 25; // USD, simple fixed-size paper trade
-    const qty = +(notional / price).toFixed(4);
-    return qty || 0.001;
+    // Fixed quantity of 1 as per manager request for readable P&L
+    return 1;
   }
 
   function openLong(price, ts, reason) {

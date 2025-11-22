@@ -558,16 +558,35 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
 
   app.post("/api/reset", (req, res) => {
     logger.warn("Manual RESET triggered via API");
-    // 1. Delete data file
+    
     const filePath = path.resolve('data', `${config.symbol}.json`);
+    
     if (fs.existsSync(filePath)) {
+      // 1. Auto-Archive
+      try {
+        const archiveDir = path.resolve('data', 'archive');
+        if (!fs.existsSync(archiveDir)) {
+          fs.mkdirSync(archiveDir, { recursive: true });
+        }
+        
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const archivePath = path.join(archiveDir, `${config.symbol}_${timestamp}.json`);
+        
+        fs.copyFileSync(filePath, archivePath);
+        logger.info({ archivePath }, "Data archived successfully.");
+      } catch (err) {
+        logger.error({ err }, "Failed to archive data before reset.");
+      }
+
+      // 2. Delete
       fs.unlinkSync(filePath);
       logger.info("Data file deleted.");
     }
-    // 2. Respond first
+    
+    // 3. Respond first
     res.json({ success: true, message: "Resetting..." });
     
-    // 3. Exit process (PM2 will restart it)
+    // 4. Exit process (PM2 will restart it)
     setTimeout(() => {
       process.exit(0);
     }, 500);

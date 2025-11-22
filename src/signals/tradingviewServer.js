@@ -2,6 +2,8 @@
 import express from "express";
 import { config } from "../config/env.js";
 import { parseTradingViewMessage } from "./parseTradingViewMessage.js";
+import fs from 'fs';
+import path from 'path';
 
 const relays = new Set();
 
@@ -168,6 +170,7 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
       <head>
         <meta charset="utf-8" />
         <title>${config.symbol} Trader</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -273,6 +276,10 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
           <div style="display:flex; align-items:center; justify-content:flex-end; margin-top:4px;">
             <span class="status-indicator status-active"></span>
             <span style="font-size:13px; color:var(--success)">Operational</span>
+          </div>
+          <div style="margin-top:8px; display:flex; gap:8px; justify-content:flex-end">
+             <button id="btn-close-all" style="background:#7f1d1d; border-color:#991b1b; color:#fca5a5">Close Positions</button>
+             <button id="btn-reset" style="background:#1e293b; border-color:#334155">Reset System</button>
           </div>
         </div>
       </div>
@@ -491,6 +498,21 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
             const url=document.getElementById('relay-url').value.trim();
             if(url){ await addRelay(url); document.getElementById('relay-url').value=''; renderRelays(await relays()); }
           };
+          document.getElementById('btn-close-all').onclick=async ()=>{
+            if(confirm('Are you sure you want to CLOSE ALL positions immediately?')) {
+              await fetch('/api/close', {method:'POST'});
+              alert('Close command sent.');
+              refresh();
+            }
+          };
+          document.getElementById('btn-reset').onclick=async ()=>{
+            if(confirm('DANGER: This will delete all memory and restart the bot. Are you sure?')) {
+              await fetch('/api/reset', {method:'POST'});
+              alert('System is resetting... Page will reload in 5s.');
+              setTimeout(()=>location.reload(), 5000);
+            }
+          };
+
           refresh(); 
           // Refresh faster for timer updates (500ms)
           setInterval(refresh, 500);
@@ -526,6 +548,29 @@ export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
     relays.delete(url);
     logger.info({ url }, "Removed relay URL");
     res.json({ ok: true, relays: [...relays] });
+  });
+  // Manual Controls API
+  app.post("/api/close", (req, res) => {
+    logger.info("Manual close triggered via API");
+    const closed = fsm.manualCloseAll();
+    res.json({ success: true, closed });
+  });
+
+  app.post("/api/reset", (req, res) => {
+    logger.warn("Manual RESET triggered via API");
+    // 1. Delete data file
+    const filePath = path.resolve('data', `${config.symbol}.json`);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      logger.info("Data file deleted.");
+    }
+    // 2. Respond first
+    res.json({ success: true, message: "Resetting..." });
+    
+    // 3. Exit process (PM2 will restart it)
+    setTimeout(() => {
+      process.exit(0);
+    }, 500);
   });
 
   return app;

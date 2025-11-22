@@ -662,6 +662,38 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       sellStop,
     }),
     getState,
-    restoreState
+    restoreState,
+    manualCloseAll: () => {
+      if (!lastTick) {
+        logger.warn("Cannot manual close: No tick data available yet");
+        return false;
+      }
+      const { ltp, ts } = lastTick;
+      let closed = false;
+      
+      if (longIsOpen()) {
+        closeLong(ltp, ts, "MANUAL_OVERRIDE");
+        closed = true;
+      }
+      if (shortIsOpen()) {
+        closeShort(ltp, ts, "MANUAL_OVERRIDE");
+        closed = true;
+      }
+      
+      // Reset states to WAIT_FOR_SIGNAL to stop any pending windows
+      if (closed) {
+        transitionTo("BUY", STATES.WAIT_FOR_SIGNAL);
+        transitionTo("SELL", STATES.WAIT_FOR_SIGNAL);
+        // Clear all windows
+        buyEntryWindowStartTs = null;
+        sellEntryWindowStartTs = null;
+        buyProfitWindowStartTs = null;
+        sellProfitWindowStartTs = null;
+        waitWindowStartTs = null;
+        waitForBuyEntryStartTs = null;
+        waitForSellEntryStartTs = null;
+      }
+      return closed;
+    }
   };
 }

@@ -1,41 +1,31 @@
 {
   "fsm": {
-    "buyState": "BUYPROFIT_WINDOW",
+    "buyState": "WAIT_FOR_SIGNAL",
     "sellState": "WAIT_FOR_SIGNAL",
-    "savedBUYLTP": 85995.93,
+    "savedBUYLTP": 84571.68,
     "savedSELLLTP": null,
-    "buyEntryTrigger": 85996.43,
-    "buyStop": 85995.43,
+    "buyEntryTrigger": 84572.18,
+    "buyStop": 84571.18,
     "sellEntryTrigger": null,
     "sellStop": null,
-    "longPosition": {
-      "side": "LONG",
-      "qty": 1,
-      "entryPrice": 86032.68,
-      "stop": 85995.43
-    },
+    "longPosition": null,
     "shortPosition": null,
     "signalHistory": [
       {
-        "ts": 1763885908162,
-        "side": "BUY",
-        "state": "WAIT_WINDOW"
-      },
-      {
-        "ts": 1763885873831,
+        "ts": 1763796712859,
         "side": "BUY",
         "state": "WAIT_FOR_SIGNAL"
       }
     ],
-    "buyEntryWindowStartTs": 1763885910192,
+    "buyEntryWindowStartTs": null,
     "sellEntryWindowStartTs": null,
-    "buyProfitWindowStartTs": 1763894499260,
+    "buyProfitWindowStartTs": null,
     "sellProfitWindowStartTs": null,
     "waitWindowStartTs": null,
     "waitWindowDurationMs": null,
     "waitWindowSource": null,
     "waitForBuyEntryStartTs": null,
-    "waitForBuyEntryFirstTickSeen": false,
+    "waitForBuyEntryFirstTickSeen": true,
     "waitForSellEntryStartTs": null,
     "waitForSellEntryFirstTickSeen": false,
     "buySignalFirstTickPending": false,
@@ -54,34 +44,26 @@
     "trades": []
   },
   "pnl": {
-    "positionQty": 1,
-    "avgPrice": 86032.68,
-    "positionSide": "LONG",
+    "positionQty": 0.0003,
+    "avgPrice": 86004.39,
+    "positionSide": "SHORT",
     "realizedPnl": 0,
     "lifetimePnl": 0,
     "tradeCount": 1,
-    "longStats": {
-      "realizedPnl": 0,
-      "tradeCount": 0
-    },
-    "shortStats": {
-      "realizedPnl": 0,
-      "tradeCount": 0
-    },
     "trades": [
       {
-        "ts": 1763887661302,
+        "ts": 1763885732734,
         "type": "OPEN",
-        "side": "BUY",
-        "qty": 1,
-        "price": 86032.68,
+        "side": "SELL",
+        "qty": 0.0003,
+        "price": 86004.39,
         "meta": {
           "symbol": "BTCUSDT",
-          "ts": 1763887662926,
-          "reason": "BUYENTRY_TRIGGER_HIT"
+          "ts": 1763885734248,
+          "reason": "MANUAL_OVERRIDE"
         }
       }
     ]
   },
-  "timestamp": 1763894552639
+  "timestamp": 1763885733191
 }

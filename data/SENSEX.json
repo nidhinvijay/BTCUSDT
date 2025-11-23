@@ -1,35 +1,19 @@
 {
   "fsm": {
-    "buyState": "BUYPROFIT_WINDOW",
+    "buyState": "WAIT_FOR_SIGNAL",
     "sellState": "WAIT_FOR_SIGNAL",
-    "savedBUYLTP": 85995.93,
+    "savedBUYLTP": null,
     "savedSELLLTP": null,
-    "buyEntryTrigger": 85996.43,
-    "buyStop": 85995.43,
+    "buyEntryTrigger": null,
+    "buyStop": null,
     "sellEntryTrigger": null,
     "sellStop": null,
-    "longPosition": {
-      "side": "LONG",
-      "qty": 1,
-      "entryPrice": 86032.68,
-      "stop": 85995.43
-    },
+    "longPosition": null,
     "shortPosition": null,
-    "signalHistory": [
-      {
-        "ts": 1763885908162,
-        "side": "BUY",
-        "state": "WAIT_WINDOW"
-      },
-      {
-        "ts": 1763885873831,
-        "side": "BUY",
-        "state": "WAIT_FOR_SIGNAL"
-      }
-    ],
-    "buyEntryWindowStartTs": 1763885910192,
+    "signalHistory": [],
+    "buyEntryWindowStartTs": null,
     "sellEntryWindowStartTs": null,
-    "buyProfitWindowStartTs": 1763894499260,
+    "buyProfitWindowStartTs": null,
     "sellProfitWindowStartTs": null,
     "waitWindowStartTs": null,
     "waitWindowDurationMs": null,
@@ -54,12 +38,12 @@
     "trades": []
   },
   "pnl": {
-    "positionQty": 1,
-    "avgPrice": 86032.68,
-    "positionSide": "LONG",
+    "positionQty": 0,
+    "avgPrice": 0,
+    "positionSide": null,
     "realizedPnl": 0,
     "lifetimePnl": 0,
-    "tradeCount": 1,
+    "tradeCount": 0,
     "longStats": {
       "realizedPnl": 0,
       "tradeCount": 0
@@ -68,20 +52,7 @@
       "realizedPnl": 0,
       "tradeCount": 0
     },
-    "trades": [
-      {
-        "ts": 1763887661302,
-        "type": "OPEN",
-        "side": "BUY",
-        "qty": 1,
-        "price": 86032.68,
-        "meta": {
-          "symbol": "BTCUSDT",
-          "ts": 1763887662926,
-          "reason": "BUYENTRY_TRIGGER_HIT"
-        }
-      }
-    ]
+    "trades": []
   },
-  "timestamp": 1763894552639
+  "timestamp": 1763894552730
 }

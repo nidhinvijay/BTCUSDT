@@ -1,595 +1,741 @@
-// src/signals/tradingviewServer.js
-import express from "express";
-import { config } from "../config/env.js";
-import { parseTradingViewMessage } from "./parseTradingViewMessage.js";
-import fs from 'fs';
+import express from 'express';
+import bodyParser from 'body-parser';
 import path from 'path';
+import fs from 'fs';
+import { parseTradingViewMessage } from './parseTradingViewMessage.js';
+import { broadcastToRelays } from './relayService.js';
+import { config } from '../config/env.js';
 
-const relays = new Set();
+let wssInstance = null;
 
-// If your Node version does NOT have global fetch:
-// import fetch from 'node-fetch';
-
-async function broadcastToRelays(event, logger) {
-  const RELAY_TIMEOUT_MS = 5000; // 5 second timeout
-
-  const promises = Array.from(relays).map(async (url) => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(event),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        // Get error response body to understand what went wrong
-        const errorText = await response.text().catch(() => "No error body");
-        logger.warn(
-          { url, status: response.status, errorBody: errorText },
-          "Relay responded with error status"
-        );
-      } else {
-        logger.debug({ url }, "Relay broadcast successful");
-      }
-    } catch (err) {
-      if (err.name === "AbortError") {
-        logger.error({ url, timeout: RELAY_TIMEOUT_MS }, "Relay POST timeout");
-      } else {
-        logger.error({ err, url }, "Relay POST failed");
-      }
-    }
-  });
-
-  // Fire and forget - don't wait for all relays
-  Promise.allSettled(promises);
+export function setWss(wss) {
+  wssInstance = wss;
 }
 
-export function startTradingViewServer({ signalBus, fsm, pnlContext, logger }) {
+export function startTradingViewServer({ activeBots, logger }) {
   const app = express();
+  app.use(bodyParser.text({ type: '*/*' }));
+  app.use(express.static('public')); // Serve static files if any
 
-  // Accept JSON and RAW TEXT
-  app.use(express.json({ limit: "2mb" }));
-  app.use(express.text({ type: "*/*", limit: "2mb" }));
+  // ------------------------------------------------------------
+  //  Dashboard HTML (Embedded for simplicity)
+  // ------------------------------------------------------------
+  app.get("/", (req, res) => {
+    res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Asset Trader</title>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --accent-color: #58a6ff;
+      --success-color: #238636;
+      --danger-color: #da3633;
+      --warning-color: #d29922;
+      --border-color: #30363d;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      margin: 0;
+      padding: 20px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .status-badge {
+      background-color: var(--success-color);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8em;
+      font-weight: bold;
+    }
+    
+    /* Symbol Tabs */
+    .symbol-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+    .symbol-tab {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+    .symbol-tab:hover {
+      background-color: #21262d;
+    }
+    .symbol-tab.active {
+      background-color: var(--accent-color);
+      color: white;
+      border-color: var(--accent-color);
+    }
 
-  // -----------------------------
-  //  Webhook (JSON OR raw text)
-  // -----------------------------
-  app.post("/webhook", async (req, res) => {
-    let raw = req.body;
-    let body = raw;
-    let message = null;
+    /* Strategy Tabs (Buy/Sell) */
+    .strategy-tabs {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 15px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .strategy-tab {
+      padding: 8px 16px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      border-bottom: 2px solid transparent;
+    }
+    .strategy-tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-color);
+      font-weight: bold;
+    }
 
-    // STEP 1 — If raw is a string, attempt JSON parse
-    if (typeof raw === "string") {
-      const trimmed = raw.trim();
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 20px;
+    }
+    .card h3 {
+      margin-top: 0;
+      font-size: 0.9em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .stat-label { color: var(--text-secondary); }
+    .stat-value { font-family: monospace; font-size: 1.1em; }
+    .state-highlight {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: var(--accent-color);
+      margin: 10px 0;
+    }
+    .buy-color { color: #3fb950; }
+    .sell-color { color: #f85149; }
+    
+    .btn {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    .btn-danger { background-color: #da3633; color: white; border: none; }
+    .btn:hover { opacity: 0.9; }
 
-      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-        try {
-          body = JSON.parse(trimmed);
-        } catch {
-          body = trimmed; // fallback to raw text
+    table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border-color); }
+    th { color: var(--text-secondary); }
+    
+    .hidden { display: none; }
+    
+    /* Toast Notification */
+    #toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+    .toast {
+      background-color: var(--card-bg);
+      border: 1px solid var(--accent-color);
+      color: var(--text-primary);
+      padding: 15px 20px;
+      margin-top: 10px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideIn 0.3s ease-out;
+      min-width: 250px;
+    }
+    .toast.buy { border-left: 5px solid #3fb950; }
+    .toast.sell { border-left: 5px solid #f85149; }
+    
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Multi-Asset Trader</h1>
+      <div style="font-size: 0.9em; color: var(--text-secondary);">Dual FSM Engine • Independent Long/Short Logic</div>
+    </div>
+    <div>
+      <div class="status-badge">● Operational</div>
+    </div>
+  </div>
+  
+  <div id="toast-container"></div>
+
+  <!-- Symbol Navigation -->
+  <div class="symbol-tabs" id="symbolTabs">
+    <!-- Generated by JS -->
+  </div>
+
+  <div id="dashboardContent">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <div id="fyersAuthStatus" style="display: none;">
+        <button class="btn" onclick="authenticateFyers()" style="background-color: var(--warning-color);">
+          🔐 Authorize Fyers for Indian Indices
+        </button>
+      </div>
+      <div style="margin-left: auto;">
+        <button class="btn btn-danger" onclick="closePositions()">Close Positions</button>
+        <button class="btn" onclick="resetSystem()">Reset System</button>
+      </div>
+    </div>
+
+    <!-- Strategy Toggle -->
+    <div class="strategy-tabs">
+      <div class="strategy-tab active" onclick="switchStrategy('LONG')">LONG Strategy (BUY)</div>
+      <div class="strategy-tab" onclick="switchStrategy('SHORT')">SHORT Strategy (SELL)</div>
+    </div>
+
+    <div class="dashboard-grid">
+      
+      <!-- FSM State Card -->
+      <div class="card">
+        <h3 id="fsmTitle">FSM STATE</h3>
+        <div id="fsmStateDisplay" class="state-highlight">WAITING...</div>
+        <div class="stat-row"><span>Entry Trigger:</span> <span id="entryTrigger" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Stop Loss:</span> <span id="stopLoss" class="stat-value">-</span></div>
+        <div id="timerDisplay" style="margin-top: 10px; font-size: 0.9em; color: var(--warning-color);"></div>
+      </div>
+
+      <!-- Position Card -->
+      <div class="card">
+        <h3 id="posTitle">ACTIVE POSITION</h3>
+        <div class="stat-row"><span>Size:</span> <span id="posSize" class="stat-value">None</span></div>
+        <div class="stat-row"><span>Entry Price:</span> <span id="posEntry" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Current Price:</span> <span id="lastPrice" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Unrealized PnL:</span> <span id="unrealizedPnl" class="stat-value">0.00</span></div>
+      </div>
+
+      <!-- Performance Card -->
+      <div class="card">
+        <h3 id="perfTitle">LONG PERFORMANCE</h3>
+        <div class="stat-row"><span>Strategy PnL:</span> <span id="strategyPnl" class="stat-value">0.00 USDT</span></div>
+        <div class="stat-row"><span>Strategy Trades:</span> <span id="strategyTrades" class="stat-value">0</span></div>
+        <div class="stat-row"><span>Session PnL (Total):</span> <span id="totalPnl" class="stat-value">0.00 USDT</span></div>
+        <div class="stat-row"><span>Lifetime PnL:</span> <span id="lifetimePnl" class="stat-value" style="color: var(--accent-color)">0.00 USDT</span></div>
+        <div class="stat-row"><span>Total Trades:</span> <span id="tradeCount" class="stat-value">0</span></div>
+        <div class="stat-row"><span>Win Rate:</span> <span id="winRate" class="stat-value">0%</span></div>
+      </div>
+
+    </div>
+
+    <!-- History Tables -->
+    <div class="dashboard-grid" style="margin-top: 20px;">
+      <div class="card">
+        <h3>Recent Trades</h3>
+        <table id="tradesTable">
+          <thead><tr><th>Time</th><th>Type</th><th>Side</th><th>Qty</th><th>Price</th><th>PnL</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Signal History</h3>
+        <table id="signalsTable">
+          <thead><tr><th>Time</th><th>Side</th><th>FSM State</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSymbol = '${config.defaultSymbol}';
+    let currentStrategy = 'LONG'; // LONG or SHORT
+    let allData = {};
+
+    // Initialize Symbol Tabs
+    const symbols = ${JSON.stringify(config.symbols)};
+    const tabsContainer = document.getElementById('symbolTabs');
+    
+    symbols.forEach(sym => {
+      const btn = document.createElement('div');
+      btn.className = 'symbol-tab' + (sym === currentSymbol ? ' active' : '');
+      btn.innerText = sym;
+      btn.onclick = () => switchSymbol(sym);
+      tabsContainer.appendChild(btn);
+    });
+
+    // Check Fyers authentication status
+    fetch('/fyers/status')
+      .then(r => r.json())
+      .then(status => {
+        if (!status.authenticated && status.configured) {
+          // Show auth button only if Indian indices are in symbols
+          const hasIndianIndices = symbols.some(s => ['NIFTY', 'BANKNIFTY', 'SENSEX'].includes(s));
+          if (hasIndianIndices) {
+            document.getElementById('fyersAuthStatus').style.display = 'block';
+          }
         }
+      })
+      .catch(err => console.error('Fyers status check failed:', err));
+
+    function authenticateFyers() {
+      window.location.href = '/fyers/auth';
+    }
+
+    function switchSymbol(sym) {
+      currentSymbol = sym;
+      document.querySelectorAll('.symbol-tab').forEach(el => {
+        el.classList.toggle('active', el.innerText === sym);
+      });
+      updateDashboard();
+    }
+
+    function switchStrategy(strat) {
+      currentStrategy = strat;
+      document.querySelectorAll('.strategy-tab').forEach(el => {
+        el.classList.toggle('active', el.innerText.includes(strat));
+      });
+      updateDashboard();
+    }
+
+    // WebSocket Connection
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(protocol + '//' + window.location.host);
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'INIT' || msg.type === 'UPDATE') {
+        allData = msg.data; // Store full state
+        updateDashboard();
+      }
+      if (msg.type === 'SIGNAL') {
+        showToast(msg.data);
+      }
+    };
+    
+    function showToast(signal) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast ' + (signal.side === 'BUY' ? 'buy' : 'sell');
+      toast.innerHTML = \`
+        <div style="font-weight: bold; font-size: 1.1em;">\${signal.symbol} \${signal.side}</div>
+        <div style="font-size: 0.9em; color: var(--text-secondary);">Signal Received</div>
+      \`;
+      
+      container.appendChild(toast);
+      
+      // Remove after 5 seconds
+      setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.5s ease-out';
+        toast.addEventListener('animationend', () => toast.remove());
+      }, 5000);
+    }
+
+    function updateDashboard() {
+      const data = allData[currentSymbol];
+      if (!data) return;
+
+      const isLong = currentStrategy === 'LONG';
+      
+      // 1. FSM State
+      const state = isLong ? data.buyState : data.sellState;
+      const stateEl = document.getElementById('fsmStateDisplay');
+      stateEl.innerText = state;
+      stateEl.className = 'state-highlight ' + (isLong ? 'buy-color' : 'sell-color');
+      document.getElementById('fsmTitle').innerText = isLong ? 'BUY FSM STATE' : 'SELL FSM STATE';
+
+      // 2. Anchors
+      const anchors = data.anchors || {};
+      document.getElementById('entryTrigger').innerText = isLong ? (anchors.buyEntryTrigger || '-') : (anchors.sellEntryTrigger || '-');
+      document.getElementById('stopLoss').innerText = isLong ? (anchors.buyStop || '-') : (anchors.sellStop || '-');
+
+      // 3. Position
+      const pos = isLong ? data.longPosition : data.shortPosition;
+      document.getElementById('posTitle').innerText = isLong ? 'LONG POSITION' : 'SHORT POSITION';
+      document.getElementById('posSize').innerText = pos ? pos.qty : 'None';
+      document.getElementById('posEntry').innerText = pos ? pos.entryPrice.toFixed(2) : '-';
+      document.getElementById('lastPrice').innerText = data.pnl.lastPrice || '-';
+      
+      // Calculate Unrealized PnL for specific side
+      // Note: pnl.unrealizedPnl is total. We need specific side PnL.
+      // Simple logic: if pos exists, calc it.
+      let unrealized = 0;
+      if (pos && data.pnl.lastPrice) {
+        if (isLong) unrealized = (data.pnl.lastPrice - pos.entryPrice) * pos.qty;
+        else unrealized = (pos.entryPrice - data.pnl.lastPrice) * pos.qty;
+      }
+      const unPnlEl = document.getElementById('unrealizedPnl');
+      unPnlEl.innerText = unrealized.toFixed(2);
+      unPnlEl.style.color = unrealized >= 0 ? '#3fb950' : '#f85149';
+
+      // 4. Performance (Strategy-Specific)
+      const longPnl = data.pnl.longStats ? data.pnl.longStats.realizedPnl : 0;
+      const shortPnl = data.pnl.shortStats ? data.pnl.shortStats.realizedPnl : 0;
+      const longTrades = data.pnl.longStats ? data.pnl.longStats.tradeCount : 0;
+      const shortTrades = data.pnl.shortStats ? data.pnl.shortStats.tradeCount : 0;
+      
+      // Update title and strategy-specific metrics
+      if (isLong) {
+        document.getElementById('perfTitle').innerText = 'LONG PERFORMANCE';
+        document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' USDT';
+        document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
+        document.getElementById('strategyTrades').innerText = longTrades;
       } else {
-        body = trimmed; // pure text message
+        document.getElementById('perfTitle').innerText = 'SHORT PERFORMANCE';
+        document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' USDT';
+        document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
+        document.getElementById('strategyTrades').innerText = shortTrades;
+      }
+      
+      document.getElementById('totalPnl').innerText = data.pnl.totalPnl + ' USDT';
+      document.getElementById('lifetimePnl').innerText = (data.pnl.lifetimePnl || 0).toFixed(2) + ' USDT';
+      document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
+      document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
+
+      // 5. Tables
+      updateTables(data);
+    }
+
+    function updateTables(data) {
+      // Trades
+      const tbody = document.querySelector('#tradesTable tbody');
+      tbody.innerHTML = '';
+      const trades = (data.pnl.trades || []).slice().reverse().slice(0, 5);
+      trades.forEach(t => {
+        const row = \`<tr>
+          <td>\${new Date(t.ts).toLocaleTimeString()}</td>
+          <td>\${t.type}</td>
+          <td class="\${t.side === 'BUY' ? 'buy-color' : 'sell-color'}">\${t.side}</td>
+          <td>\${t.qty}</td>
+          <td>\${t.price.toFixed(2)}</td>
+          <td style="color: \${(t.pnl || 0) >= 0 ? '#3fb950' : '#f85149'}">\${t.pnl ? t.pnl.toFixed(2) : '-'}</td>
+        </tr>\`;
+        tbody.innerHTML += row;
+      });
+
+      // Signals
+      const sbody = document.querySelector('#signalsTable tbody');
+      sbody.innerHTML = '';
+      const signals = (data.signalHistory || []).slice(0, 5);
+      signals.forEach(s => {
+        const row = \`<tr>
+          <td>\${new Date(s.ts).toLocaleTimeString()}</td>
+          <td class="\${s.side === 'BUY' ? 'buy-color' : 'sell-color'}">\${s.side}</td>
+          <td>\${s.state}</td>
+        </tr>\`;
+        sbody.innerHTML += row;
+      });
+    }
+
+    function closePositions() {
+      if(confirm('Close all positions for ' + currentSymbol + '?')) {
+        fetch('/api/close?symbol=' + currentSymbol, { method: 'POST' });
       }
     }
 
-    // STEP 2 — Extract message
-    if (typeof body === "string") {
-      message = body.trim();
-    } else if (body && typeof body === "object") {
-      message = body.message ?? body.text ?? body.signal ?? null;
+    function resetSystem() {
+      if(confirm('RESET SYSTEM for ' + currentSymbol + '? This will archive data.')) {
+        fetch('/api/reset?symbol=' + currentSymbol, { method: 'POST' });
+      }
     }
+  </script>
+</body>
+</html>
+    `);
+  });
 
-    // STEP 3 — Must be valid text
-    if (!message || typeof message !== "string") {
-      logger.warn({ raw }, "Webhook without usable message text");
-      return res.status(400).json({ error: "Missing message text" });
-    }
-
-    // STEP 4 — Parse into BUY/SELL
+  // ------------------------------------------------------------
+  //  Webhook Endpoint
+  // ------------------------------------------------------------
+  app.post("/webhook", (req, res) => {
+    const message = req.body;
+    
+    // Parse message
     const { side } = parseTradingViewMessage(message);
+    
+    // Determine Symbol (Default to BTCUSDT if not found)
+    // We look for "sym=BTCUSDT" in the message string
+    let symbol = config.defaultSymbol;
+    const match = message.match(/sym=([A-Z0-9]+)/i);
+    if (match && match[1]) {
+      const extracted = match[1].toUpperCase();
+      
+      // Check for exact match first
+      if (activeBots.has(extracted)) {
+        symbol = extracted;
+      } else {
+        // Check for partial match (e.g. NIFTY251125P26250 starts with NIFTY)
+        for (const key of activeBots.keys()) {
+          if (extracted.startsWith(key)) {
+            symbol = key;
+            break;
+          }
+        }
+      }
+    }
+
+    const bot = activeBots.get(symbol);
+
+    if (!bot) {
+      logger.error({ symbol }, "Received signal for unknown symbol");
+      return res.status(400).json({ error: "Unknown symbol" });
+    }
 
     if (!side) {
       logger.warn({ message }, "Unknown TradingView message format");
       return res.status(400).json({ error: "Unknown message format" });
     }
 
-    logger.info({ side, message }, "Received TradingView signal");
+    logger.info({ side, symbol, message }, "Received TradingView signal");
 
     // Emit BUY/SELL internally
-    if (side === "BUY") signalBus.emitBuy();
-    if (side === "SELL") signalBus.emitSell();
+    if (side === "BUY") bot.signalBus.emitBuy();
+    if (side === "SELL") bot.signalBus.emitSell();
 
-    // Respond immediately, then relay asynchronously
-    res.json({ status: "ok" });
-
-    // Relay to external endpoints (async, non-blocking)
-    broadcastToRelays(
-      {
-        message: message, // Send in webhook-compatible format
-        type: "tradingview-signal",
-        side,
-        rawMessage: message,
-        ts: Date.now(),
-      },
-      logger
-    );
-  });
-
-  // ------------------------------------------------------------
-  //  Status API (FSM state, anchors, PnL, position)
-  // ------------------------------------------------------------
-  app.get("/status", (req, res) => {
-    const buyState = fsm?.getBuyState?.() ?? "UNKNOWN";
-    const sellState = fsm?.getSellState?.() ?? "UNKNOWN";
-    const longPosition = fsm?.getLongPosition?.() ?? null;
-    const shortPosition = fsm?.getShortPosition?.() ?? null;
-    const anchors = fsm?.getAnchors?.() ?? null;
-    const signalHistory = fsm?.getSignalHistory?.() ?? [];
-    const pnl = pnlContext?.getSnapshot?.() ?? null;
-    
-    // Expose full state to get timers
-    const fullState = fsm?.getState?.() || {};
-
-    res.json({
-      buyState,
-      sellState,
-      longPosition,
-      shortPosition,
-      anchors,
-      signalHistory,
-      pnl,
-      timers: {
-        buyEntryWindowStartTs: fullState.buyEntryWindowStartTs,
-        sellEntryWindowStartTs: fullState.sellEntryWindowStartTs,
-        buyProfitWindowStartTs: fullState.buyProfitWindowStartTs,
-        sellProfitWindowStartTs: fullState.sellProfitWindowStartTs,
-        waitWindowStartTs: fullState.waitWindowStartTs,
-        waitWindowDurationMs: fullState.waitWindowDurationMs,
-        waitWindowSource: fullState.waitWindowSource,
-        waitForBuyEntryStartTs: fullState.waitForBuyEntryStartTs,
-        waitForSellEntryStartTs: fullState.waitForSellEntryStartTs,
-      }
-    });
-  });
-
-  // ------------------------------------------------------------
-  //  Dashboard UI HTML
-  // ------------------------------------------------------------
-  app.get("/", (req, res) => {
-    res.send(`
-      <!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${config.symbol} Trader</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-        <style>
-          :root {
-            --bg: #09090b;
-            --card-bg: #18181b;
-            --border: #27272a;
-            --text: #e4e4e7;
-            --text-muted: #a1a1aa;
-            --accent-buy: #00f0ff;
-            --accent-sell: #ff0055;
-            --success: #22c55e;
-            --danger: #ef4444;
-            --font-main: 'Inter', system-ui, sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
-          }
-          * { box-sizing: border-box; }
-          body {
-            margin: 0; padding: 24px;
-            font-family: var(--font-main);
-            background: var(--bg); color: var(--text);
-            line-height: 1.5;
-          }
-          h1 { margin: 0 0 8px 0; font-weight: 600; letter-spacing: -0.02em; }
-          .header { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
-          .sub { color: var(--text-muted); font-size: 14px; }
-          
-          .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
-          .card { 
-            background: var(--card-bg); 
-            border: 1px solid var(--border); 
-            border-radius: 12px; 
-            padding: 20px; 
-            position: relative;
-            overflow: hidden;
-          }
-          
-          .label { font-size: 12px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; letter-spacing: 0.05em; }
-          .value { font-size: 24px; font-weight: 500; font-family: var(--font-mono); }
-          .value-sm { font-size: 16px; font-family: var(--font-mono); }
-          
-          .buy-text { color: var(--accent-buy); }
-          .sell-text { color: var(--accent-sell); }
-          .pnl-pos { color: var(--success); }
-          .pnl-neg { color: var(--danger); }
-          
-          /* Timer Badge */
-          .timer-badge {
-            position: absolute;
-            top: 16px; right: 16px;
-            background: rgba(255,255,255,0.1);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: #fbbf24;
-            display: none;
-            animation: pulse 2s infinite;
-          }
-          @keyframes pulse { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
-
-          table { width: 100%; border-collapse: collapse; font-size: 13px; }
-          th, td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; }
-          th { font-weight: 500; color: var(--text-muted); font-size: 12px; }
-          td { font-family: var(--font-mono); }
-          
-          .relay-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-          
-          button { 
-            border-radius: 6px; border: 1px solid var(--border); 
-            background: #27272a; color: var(--text); 
-            padding: 6px 12px; cursor: pointer; font-size: 13px; font-family: var(--font-main);
-            transition: all 0.2s;
-          }
-          button:hover { background: #3f3f46; border-color: #52525b; }
-          
-          input { 
-            width: 100%; padding: 8px 12px; border-radius: 6px; 
-            border: 1px solid var(--border); background: #09090b; 
-            color: var(--text); font-size: 13px; margin-bottom: 8px; 
-            font-family: var(--font-mono);
-          }
-          input:focus { outline: none; border-color: var(--text-muted); }
-          
-          .small { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-          
-          .status-indicator {
-            display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); margin-right: 8px;
-          }
-          .status-active { background: var(--success); box-shadow: 0 0 8px var(--success); }
-        </style>
-      </head>
-      <body>
-      
-      <div class="header">
-        <div>
-          <h1>${config.symbol} <span style="font-weight:300; color:var(--text-muted)">Trader</span></h1>
-          <div class="sub">Dual FSM Engine · Independent Long/Short Logic</div>
-        </div>
-        <div style="text-align:right">
-          <div class="label" style="margin:0">System Status</div>
-          <div style="display:flex; align-items:center; justify-content:flex-end; margin-top:4px;">
-            <span class="status-indicator status-active"></span>
-            <span style="font-size:13px; color:var(--success)">Operational</span>
-          </div>
-          <div style="margin-top:8px; display:flex; gap:8px; justify-content:flex-end">
-             <button id="btn-close-all" style="background:#7f1d1d; border-color:#991b1b; color:#fca5a5">Close Positions</button>
-             <button id="btn-reset" style="background:#1e293b; border-color:#334155">Reset System</button>
-          </div>
-        </div>
-      </div>
-
-      <div id="cards">Loading...</div>
-
-      <div class="grid">
-        <div class="card">
-          <div class="label">Recent Trades</div>
-          <div id="trades-table" style="max-height: 300px; overflow-y: auto;">No trades yet.</div>
-        </div>
-
-        <div class="card">
-          <div class="label">Signal History</div>
-          <div id="signals-table" style="max-height: 300px; overflow-y: auto;">No signals yet.</div>
-        </div>
-
-        <div class="card">
-          <div class="label">Relay Configuration</div>
-          <input id="relay-url" type="text" placeholder="https://your-endpoint.example.com/hook">
-          <button id="add-relay-btn">Add Relay</button>
-          <div class="small">Signals are forwarded to these webhooks.</div>
-          <div id="relays-list" style="margin-top:12px;">Loading relays...</div>
-        </div>
-      </div>
-
-      <script>
-        const WINDOW_MS = 60000;
-        function fmt(v){ return v==null?'-':Number(v).toFixed(2); }
-        function cls(v){ return v>0?'pnl-pos':v<0?'pnl-neg':''; }
-        
-        async function status(){ return (await fetch('/status')).json(); }
-        async function relays(){ return (await fetch('/relays')).json(); }
-        async function addRelay(url){ return (await fetch('/relays',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})).json(); }
-        async function rmRelay(url){ return (await fetch('/relays',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})).json(); }
-
-        function getTimer(d, state, side) {
-          const now = Date.now();
-          let start = null;
-          let duration = WINDOW_MS;
-          
-          // Map states to their start timestamps
-          if (state === 'BUYENTRY_WINDOW') start = d.timers.buyEntryWindowStartTs;
-          else if (state === 'SELLENTRY_WINDOW') start = d.timers.sellEntryWindowStartTs;
-          else if (state === 'BUYPROFIT_WINDOW') start = d.timers.buyProfitWindowStartTs;
-          else if (state === 'SELLPROFIT_WINDOW') start = d.timers.sellProfitWindowStartTs;
-          else if (state === 'WAIT_FOR_BUYENTRY') start = d.timers.waitForBuyEntryStartTs;
-          else if (state === 'WAIT_FOR_SELLENTRY') start = d.timers.waitForSellEntryStartTs;
-          else if (state === 'WAIT_WINDOW') {
-             // For WAIT_WINDOW, we need to check if it belongs to this side
-             // The backend provides waitWindowSource, we can infer side
-             const src = d.timers.waitWindowSource || '';
-             const srcSide = src.includes('BUY') ? 'BUY' : (src.includes('SELL') ? 'SELL' : '');
-             if (srcSide === side) {
-               start = d.timers.waitWindowStartTs;
-               duration = d.timers.waitWindowDurationMs || 0;
-             }
-          }
-
-          if (!start) return null;
-          const elapsed = now - start;
-          const remaining = Math.max(0, duration - elapsed);
-          return (remaining / 1000).toFixed(1) + 's';
+    // Broadcast to Dashboard Clients
+    if (wssInstance) {
+      const signalMsg = JSON.stringify({
+        type: 'SIGNAL',
+        data: { symbol, side, ts: Date.now() }
+      });
+      wssInstance.clients.forEach(client => {
+        if (client.readyState === 1) { // WebSocket.OPEN
+          client.send(signalMsg);
         }
-
-        function renderCards(d){
-          const p=d.pnl||{}, lp=d.longPosition||{}, sp=d.shortPosition||{}, a=d.anchors||{}, m=p.metrics||{};
-          
-          const buyTimer = getTimer(d, d.buyState, 'BUY');
-          const sellTimer = getTimer(d, d.sellState, 'SELL');
-
-          document.getElementById('cards').innerHTML = \`
-            <div class="grid">
-              <!-- BUY SIDE -->
-              <div class="card" style="border-top: 3px solid var(--accent-buy)">
-                <div class="label">BUY FSM State</div>
-                <div class="value buy-text">\${d.buyState}</div>
-                \${buyTimer ? \`<div class="timer-badge" style="display:block">\${buyTimer}</div>\` : ''}
-                <div style="margin-top:12px; font-size:13px; color:var(--text-muted)">
-                  Entry Trigger: <span style="color:var(--text)">\${a.buyEntryTrigger??'-'}</span><br>
-                  Stop Loss: <span style="color:var(--text)">\${a.buyStop??'-'}</span>
-                </div>
-              </div>
-
-              <!-- SELL SIDE -->
-              <div class="card" style="border-top: 3px solid var(--accent-sell)">
-                <div class="label">SELL FSM State</div>
-                <div class="value sell-text">\${d.sellState}</div>
-                \${sellTimer ? \`<div class="timer-badge" style="display:block">\${sellTimer}</div>\` : ''}
-                <div style="margin-top:12px; font-size:13px; color:var(--text-muted)">
-                  Entry Trigger: <span style="color:var(--text)">\${a.sellEntryTrigger??'-'}</span><br>
-                  Stop Loss: <span style="color:var(--text)">\${a.sellStop??'-'}</span>
-                </div>
-              </div>
-
-              <!-- POSITIONS -->
-              <div class="card">
-                <div class="label">Active Positions</div>
-                <div style="display:flex; flex-direction:column; gap:8px">
-                  <div style="display:flex; justify-content:space-between">
-                    <span class="sub">LONG</span>
-                    <span class="value-sm" style="\${lp.qty?'color:var(--accent-buy)':'color:var(--text-muted)'}">
-                      \${lp.qty ? \`\${lp.qty} @ \${fmt(lp.entryPrice)}\` : 'None'}
-                    </span>
-                  </div>
-                  <div style="display:flex; justify-content:space-between">
-                    <span class="sub">SHORT</span>
-                    <span class="value-sm" style="\${sp.qty?'color:var(--accent-sell)':'color:var(--text-muted)'}">
-                      \${sp.qty ? \`\${sp.qty} @ \${fmt(sp.entryPrice)}\` : 'None'}
-                    </span>
-                  </div>
-                </div>
-                <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center">
-                   <span class="label" style="margin:0">Last Price</span>
-                   <span class="value-sm">\${fmt(p.lastPrice)}</span>
-                </div>
-              </div>
-              
-              <!-- PNL -->
-              <div class="card">
-                <div class="label">Performance</div>
-                <div class="value \${cls(p.totalPnl)}">\${fmt(p.totalPnl)} <span style="font-size:14px">USDT</span></div>
-                <div class="grid" style="grid-template-columns:1fr 1fr; gap:8px; margin:12px 0 0 0">
-                  <div>
-                    <div class="sub">Realized</div>
-                    <div class="\${cls(p.realizedPnl)}">\${fmt(p.realizedPnl)}</div>
-                  </div>
-                  <div>
-                    <div class="sub">Unrealized</div>
-                    <div class="\${cls(p.unrealizedPnl)}">\${fmt(p.unrealizedPnl)}</div>
-                  </div>
-                </div>
-                
-                <!-- Detailed Stats -->
-                <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border)">
-                  <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px; margin:0">
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Win Rate</span> 
-                      <span class="value-sm">\${fmt(m.winRate)}%</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Profit Factor</span> 
-                      <span class="value-sm">\${fmt(m.profitFactor)}</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Trades</span> 
-                      <span class="value-sm">\${p.tradeCount||0} (\${m.winCount}W / \${m.lossCount}L)</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Return</span> 
-                      <span class="value-sm">\${fmt(m.pnlPercentage)}%</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Avg Trade</span> 
-                      <span class="value-sm">\${fmt(m.avgTradePnl)}</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Best Trade</span> 
-                      <span class="value-sm pnl-pos">\${fmt(m.bestTrade)}</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Worst Trade</span> 
-                      <span class="value-sm pnl-neg">\${fmt(m.worstTrade)}</span>
-                    </div>
-                    <div style="display:flex; justify-content:space-between">
-                      <span class="sub">Gross PnL</span> 
-                      <span class="value-sm">\${fmt(m.totalWins)} / \${fmt(m.totalLosses)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          \`;
-        }
-
-        function renderTrades(p){
-          const h=document.getElementById('trades-table');
-          const t=(p&&p.trades)||[];
-          if(!t.length){ h.textContent='No trades yet.'; return; }
-          h.innerHTML = '<table><thead><tr><th>Time</th><th>Type</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L</th></tr></thead><tbody>' +
-            t.slice().reverse().map(r=>{
-              const ts=new Date(r.ts).toLocaleTimeString();
-              return \`<tr><td>\${ts}</td><td>\${r.type}</td><td class="\${r.side==='BUY'?'buy-text':'sell-text'}">\${r.side}</td><td>\${r.qty}</td><td>\${r.price}</td><td class="\${cls(r.pnl)}">\${fmt(r.pnl)}</td></tr>\`;
-            }).join('') + '</tbody></table>';
-        }
-
-        function renderSignals(s){
-          const h=document.getElementById('signals-table');
-          const list=s||[];
-          if(!list.length){ h.textContent='No signals yet.'; return; }
-          h.innerHTML = '<table><thead><tr><th>Time</th><th>Side</th><th>FSM State</th></tr></thead><tbody>' +
-            list.map(r=>{
-              const ts=new Date(r.ts).toLocaleTimeString();
-              const sideClass=r.side==='BUY'?'buy-text':'sell-text';
-              return \`<tr><td>\${ts}</td><td class="\${sideClass}">\${r.side}</td><td>\${r.state}</td></tr>\`;
-            }).join('') + '</tbody></table>';
-        }
-
-        function renderRelays(d){
-          const h=document.getElementById('relays-list');
-          const list=d.relays||[];
-          if(!list.length){ h.textContent='No relays registered.'; return; }
-          h.innerHTML=list.map(u=>\`<div class="relay-row"><div>\${u}</div><button data-url="\${u}">Remove</button></div>\`).join('');
-          h.querySelectorAll('button').forEach(btn=>{
-            btn.onclick=async ()=>{ await rmRelay(btn.dataset.url); renderRelays(await relays()); };
-          });
-        }
-
-        async function refresh(){
-          const [s,r]=await Promise.all([status(),relays()]);
-          renderCards(s); renderSignals(s.signalHistory); renderTrades(s.pnl); renderRelays(r);
-        }
-
-        document.addEventListener('DOMContentLoaded',()=>{
-          document.getElementById('add-relay-btn').onclick=async ()=>{
-            const url=document.getElementById('relay-url').value.trim();
-            if(url){ await addRelay(url); document.getElementById('relay-url').value=''; renderRelays(await relays()); }
-          };
-          document.getElementById('btn-close-all').onclick=async ()=>{
-            if(confirm('Are you sure you want to CLOSE ALL positions immediately?')) {
-              await fetch('/api/close', {method:'POST'});
-              alert('Close command sent.');
-              refresh();
-            }
-          };
-          document.getElementById('btn-reset').onclick=async ()=>{
-            if(confirm('DANGER: This will delete all memory and restart the bot. Are you sure?')) {
-              await fetch('/api/reset', {method:'POST'});
-              alert('System is resetting... Page will reload in 5s.');
-              setTimeout(()=>location.reload(), 5000);
-            }
-          };
-
-          refresh(); 
-          // Refresh faster for timer updates (500ms)
-          setInterval(refresh, 500);
-        });
-      </script>
-      </body></html>
-    `);
-  });
-
-  // Relay Management API
-  app.get("/relays", (req, res) => res.json({ relays: [...relays] }));
-  app.post("/relays", (req, res) => {
-    const { url } = req.body || {};
-    if (!url) return res.status(400).json({ error: "url is required" });
-
-    // Validate URL format
-    try {
-      const parsed = new URL(url);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        return res.status(400).json({ error: "URL must use HTTP or HTTPS" });
-      }
-    } catch (err) {
-      return res.status(400).json({ error: "Invalid URL format" });
+      });
     }
 
-    relays.add(url);
-    logger.info({ url }, "Added relay URL");
-    res.json({ ok: true, relays: [...relays] });
+    // Respond immediately
+    res.json({ status: "ok", symbol });
+
+    // Relay
+    broadcastToRelays({
+        message: message,
+        type: "tradingview-signal",
+        side,
+        symbol,
+        ts: Date.now(),
+      }, logger);
   });
-  app.delete("/relays", (req, res) => {
-    const { url } = req.body || {};
-    if (!url) return res.status(400).json({ error: "url is required" });
-    relays.delete(url);
-    logger.info({ url }, "Removed relay URL");
-    res.json({ ok: true, relays: [...relays] });
-  });
-  // Manual Controls API
+
+  // ------------------------------------------------------------
+  //  API Endpoints
+  // ------------------------------------------------------------
   app.post("/api/close", (req, res) => {
-    logger.info("Manual close triggered via API");
-    const closed = fsm.manualCloseAll();
-    res.json({ success: true, closed });
+    const symbol = req.query.symbol || config.defaultSymbol;
+    const bot = activeBots.get(symbol);
+    if (bot) {
+      const closed = bot.fsm.manualCloseAll();
+      res.json({ success: true, closed, symbol });
+    } else {
+      res.status(404).json({ error: "Bot not found" });
+    }
   });
 
   app.post("/api/reset", (req, res) => {
-    logger.warn("Manual RESET triggered via API");
+    const symbol = req.query.symbol || config.defaultSymbol;
+    // Trigger the scheduler's reset logic manually? 
+    // Or just replicate it here.
+    // Let's replicate the archive logic for single symbol.
     
-    const filePath = path.resolve('data', `${config.symbol}.json`);
-    
+    const filePath = path.resolve('data', `${symbol}.json`);
     if (fs.existsSync(filePath)) {
-      // 1. Auto-Archive
       try {
         const archiveDir = path.resolve('data', 'archive');
-        if (!fs.existsSync(archiveDir)) {
-          fs.mkdirSync(archiveDir, { recursive: true });
-        }
-        
+        if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const archivePath = path.join(archiveDir, `${config.symbol}_${timestamp}.json`);
-        
+        const archivePath = path.join(archiveDir, `${symbol}_${timestamp}.json`);
         fs.copyFileSync(filePath, archivePath);
-        logger.info({ archivePath }, "Data archived successfully.");
-      } catch (err) {
-        logger.error({ err }, "Failed to archive data before reset.");
+        fs.unlinkSync(filePath);
+      } catch(e) {
+        logger.error(e, "Reset failed");
       }
-
-      // 2. Delete
-      fs.unlinkSync(filePath);
-      logger.info("Data file deleted.");
     }
     
-    // 3. Respond first
-    res.json({ success: true, message: "Resetting..." });
-    
-    // 4. Exit process (PM2 will restart it)
-    setTimeout(() => {
-      process.exit(0);
-    }, 500);
+    res.json({ success: true, message: "Resetting...", symbol });
+    setTimeout(() => process.exit(0), 500);
+  });
+
+  // ------------------------------------------------------------
+  //  Fyers OAuth Endpoints (Browser-based)
+  // ------------------------------------------------------------
+  app.get("/fyers/auth", (req, res) => {
+    // Check if Fyers is configured
+    if (!config.fyers.enabled) {
+      return res.send(`
+        <html>
+          <body style="font-family: Arial; padding: 40px; text-align: center;">
+            <h2>❌ Fyers Not Configured</h2>
+            <p>Please add FYERS_APP_ID and FYERS_SECRET_KEY to your .env file</p>
+            <a href="/">Return to Dashboard</a>
+          </body>
+        </html>
+      `);
+    }
+
+    // Import auth module
+    import('../brokers/fyersAuth.js').then(({ FyersAuth }) => {
+      const fyersAuth = new FyersAuth({
+        appId: config.fyers.appId,
+        secretKey: config.fyers.secretKey,
+        redirectUri: `${req.protocol}://${req.get('host')}/fyers/callback`,
+        logger
+      });
+
+      const { authUrl } = fyersAuth.getAuthCodeUrl();
+      
+      // Redirect to Fyers login
+      res.redirect(authUrl);
+    });
+  });
+
+  app.get("/fyers/callback", async (req, res) => {
+    const { auth_code, state } = req.query;
+
+    if (!auth_code) {
+      return res.send(`
+        <html>
+          <body style="font-family: Arial; padding: 40px; text-align: center;">
+            <h2>❌ Authentication Failed</h2>
+            <p>No authorization code received</p>
+            <a href="/fyers/auth">Try Again</a>
+          </body>
+        </html>
+      `);
+    }
+
+    try {
+      // Import auth module
+      const { FyersAuth } = await import('../brokers/fyersAuth.js');
+      const fyersAuth = new FyersAuth({
+        appId: config.fyers.appId,
+        secretKey: config.fyers.secretKey,
+        redirectUri: `${req.protocol}://${req.get('host')}/fyers/callback`,
+        logger
+      });
+
+      // Get access token
+      const accessToken = await fyersAuth.getAccessToken(auth_code);
+
+      // Success! Redirect to dashboard
+      res.send(`
+        <html>
+          <head>
+            <meta http-equiv="refresh" content="3;url=/" />
+            <style>
+              body {
+                font-family: Arial;
+                padding: 40px;
+                text-align: center;
+                background: #0d1117;
+                color: #c9d1d9;
+              }
+              .success {
+                background: #238636;
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                display: inline-block;
+                margin: 20px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="success">
+              <h2>✅ Fyers Authentication Successful!</h2>
+              <p>Token saved. Redirecting to dashboard...</p>
+              <p><small>Access Token: ${accessToken.substring(0, 20)}...</small></p>
+            </div>
+            <p>If not redirected, <a href="/" style="color: #58a6ff;">click here</a></p>
+          </body>
+        </html>
+      `);
+      
+      logger.info('Fyers authentication successful via dashboard');
+      
+      // Restart needed to load new token - we could also hot-reload here
+      setTimeout(() => {
+        logger.info('Restarting to load new Fyers token...');
+        process.exit(0); // PM2/systemd will restart
+      }, 5000);
+      
+    } catch (error) {
+      logger.error({ error }, 'Fyers callback error');
+      res.send(`
+        <html>
+          <body style="font-family: Arial; padding: 40px; text-align: center;">
+            <h2>❌ Authentication Error</h2>
+            <p>${error.message}</p>
+            <a href="/fyers/auth">Try Again</a>
+          </body>
+        </html>
+      `);
+    }
+  });
+
+  app.get("/fyers/status", (req, res) => {
+    // Check current Fyers auth status
+    import('../brokers/fyersAuth.js').then(({ FyersAuth }) => {
+      if (!config.fyers.enabled) {
+        return res.json({ 
+          authenticated: false, 
+          configured: false,
+          message: 'Fyers not configured in .env' 
+        });
+      }
+
+      const fyersAuth = new FyersAuth({
+        appId: config.fyers.appId,
+        secretKey: config.fyers.secretKey,
+        redirectUri: config.fyers.redirectUri,
+        logger
+      });
+
+      const isAuth = fyersAuth.isAuthenticated();
+      res.json({ 
+        authenticated: isAuth,
+        configured: true,
+        message: isAuth ? 'Fyers authenticated' : 'Authentication required'
+      });
+    });
   });
 
   return app;

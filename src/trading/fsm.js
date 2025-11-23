@@ -715,6 +715,36 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         waitForSellEntryStartTs = null;
       }
       return closed;
+    },
+    reset() {
+      buyState = STATES.WAIT_FOR_SIGNAL;
+      sellState = STATES.WAIT_FOR_SIGNAL;
+      savedBUYLTP = null;
+      savedSELLLTP = null;
+      buyEntryTrigger = null;
+      buyStop = null;
+      sellEntryTrigger = null;
+      sellStop = null;
+      longPosition = null;
+      shortPosition = null;
+      signalHistory.length = 0;
+      lastTick = null;
+      buyEntryWindowStartTs = null;
+      sellEntryWindowStartTs = null;
+      buyProfitWindowStartTs = null;
+      sellProfitWindowStartTs = null;
+      waitWindowStartTs = null;
+      waitWindowDurationMs = null;
+      waitWindowSource = null;
+      waitForBuyEntryStartTs = null;
+      waitForBuyEntryFirstTickSeen = false;
+      waitForSellEntryStartTs = null;
+      waitForSellEntryFirstTickSeen = false;
+      buySignalFirstTickPending = false;
+      sellSignalFirstTickPending = false;
+      buyEntryFirstTickPending = false;
+      sellEntryFirstTickPending = false;
+      logger.info("FSM state reset to initial values.");
     }
   };
 }

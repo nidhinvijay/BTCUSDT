@@ -6,8 +6,13 @@ export function createPnlContext({ symbol }) {
 
   let lastPrice = null;
   let realizedPnl = 0;
+  let lifetimePnl = 0;
   let tradeCount = 0;
   const trades = [];
+
+  // Split Stats
+  let longStats = { realizedPnl: 0, tradeCount: 0 };
+  let shortStats = { realizedPnl: 0, tradeCount: 0 };
 
   function getUnrealizedPnl() {
     if (lastPrice == null || positionQty === 0 || !positionSide) return 0;
@@ -90,7 +95,16 @@ export function createPnlContext({ symbol }) {
       realizedPnl: Number(realizedPnl.toFixed(2)),
       unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
       totalPnl: Number(totalPnl.toFixed(2)),
+      lifetimePnl: Number((lifetimePnl + realizedPnl).toFixed(2)), // Lifetime includes current session realized
       tradeCount,
+      longStats: {
+        realizedPnl: Number(longStats.realizedPnl.toFixed(2)),
+        tradeCount: longStats.tradeCount
+      },
+      shortStats: {
+        realizedPnl: Number(shortStats.realizedPnl.toFixed(2)),
+        tradeCount: shortStats.tradeCount
+      },
       trades,
       metrics,
     };
@@ -168,6 +182,11 @@ export function createPnlContext({ symbol }) {
 
         const pnl = (price - avgPrice) * qty;
         realizedPnl += pnl;
+        
+        // Update Long Stats
+        longStats.realizedPnl += pnl;
+        longStats.tradeCount += 1;
+
         positionQty -= qty;
 
         if (positionQty <= 0) {
@@ -192,6 +211,11 @@ export function createPnlContext({ symbol }) {
 
         const pnl = (avgPrice - price) * qty;
         realizedPnl += pnl;
+
+        // Update Short Stats
+        shortStats.realizedPnl += pnl;
+        shortStats.tradeCount += 1;
+
         positionQty -= qty;
 
         if (positionQty <= 0) {
@@ -221,7 +245,10 @@ export function createPnlContext({ symbol }) {
         avgPrice,
         positionSide,
         realizedPnl,
+        lifetimePnl,
         tradeCount,
+        longStats,
+        shortStats,
         trades
       };
     },
@@ -232,11 +259,33 @@ export function createPnlContext({ symbol }) {
       avgPrice = state.avgPrice || 0;
       positionSide = state.positionSide || null;
       realizedPnl = state.realizedPnl || 0;
+      lifetimePnl = state.lifetimePnl || 0;
       tradeCount = state.tradeCount || 0;
+      
+      longStats = state.longStats || { realizedPnl: 0, tradeCount: 0 };
+      shortStats = state.shortStats || { realizedPnl: 0, tradeCount: 0 };
+
       if (state.trades && Array.isArray(state.trades)) {
         trades.length = 0;
         trades.push(...state.trades);
       }
+    },
+    reset() {
+      // Add current session realized PnL to lifetime PnL before resetting
+      lifetimePnl += realizedPnl;
+      
+      positionQty = 0;
+      avgPrice = 0;
+      positionSide = null;
+      realizedPnl = 0;
+      tradeCount = 0;
+      
+      // Reset split stats
+      longStats = { realizedPnl: 0, tradeCount: 0 };
+      shortStats = { realizedPnl: 0, tradeCount: 0 };
+
+      trades.length = 0;
+      lastPrice = null;
     }
   };
 }

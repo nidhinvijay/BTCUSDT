@@ -45,7 +45,7 @@ export function startTradingViewServer({ activeBots, logger }) {
       background-color: var(--bg-color);
       color: var(--text-primary);
       margin: 0;
-      padding: 20px;
+      padding: 6px;
     }
     .header {
       display: flex;
@@ -241,7 +241,7 @@ export function startTradingViewServer({ activeBots, logger }) {
         <div id="fsmStateDisplay" class="state-highlight">WAITING...</div>
         <div class="stat-row"><span>Entry Trigger:</span> <span id="entryTrigger" class="stat-value">-</span></div>
         <div class="stat-row"><span>Stop Loss:</span> <span id="stopLoss" class="stat-value">-</span></div>
-        <div id="timerDisplay" style="margin-top: 10px; font-size: 0.9em; color: var(--warning-color);"></div>
+        <div id="timerDisplay" style="margin-top: 15px; font-size: 1.3em; font-family: monospace; color: var(--warning-color); font-weight: bold;"></div>
       </div>
 
       <!-- Position Card -->
@@ -386,6 +386,62 @@ export function startTradingViewServer({ activeBots, logger }) {
       const anchors = data.anchors || {};
       document.getElementById('entryTrigger').innerText = isLong ? (anchors.buyEntryTrigger || '-') : (anchors.sellEntryTrigger || '-');
       document.getElementById('stopLoss').innerText = isLong ? (anchors.buyStop || '-') : (anchors.sellStop || '-');
+
+      // 2.5 Timer (60-second windows)
+      const timerEl = document.getElementById('timerDisplay');
+      let windowStartTs = null;
+      let windowDuration = 60000;
+      let windowLabel = '';
+      
+      if (isLong) {
+        if (state === 'BUYENTRY_WINDOW' && data.buyEntryWindowStartTs) {
+          windowStartTs = data.buyEntryWindowStartTs;
+          windowLabel = '⏱️ Entry Window: ';
+        } else if (state === 'BUYPROFIT_WINDOW' && data.buyProfitWindowStartTs) {
+          windowStartTs = data.buyProfitWindowStartTs;
+          windowLabel = '⏱️ Profit Window: ';
+        } else if (state === 'WAIT_FOR_BUYENTRY' && data.waitForBuyEntryStartTs) {
+          windowStartTs = data.waitForBuyEntryStartTs;
+          windowLabel = '⏱️ Wait for Entry: ';
+        } else if (state === 'WAIT_WINDOW' && data.waitWindowSource && data.waitWindowSource.includes('BUY')) {
+          windowStartTs = data.waitWindowStartTs;
+          windowDuration = data.waitWindowDurationMs || 60000;
+          windowLabel = '⏱️ Wait Window: ';
+        }
+      } else {
+        if (state === 'SELLENTRY_WINDOW' && data.sellEntryWindowStartTs) {
+          windowStartTs = data.sellEntryWindowStartTs;
+          windowLabel = '⏱️ Entry Window: ';
+        } else if (state === 'SELLPROFIT_WINDOW' && data.sellProfitWindowStartTs) {
+          windowStartTs = data.sellProfitWindowStartTs;
+          windowLabel = '⏱️ Profit Window: ';
+        } else if (state === 'WAIT_FOR_SELLENTRY' && data.waitForSellEntryStartTs) {
+          windowStartTs = data.waitForSellEntryStartTs;
+          windowLabel = '⏱️ Wait for Entry: ';
+        } else if (state === 'WAIT_WINDOW' && data.waitWindowSource && data.waitWindowSource.includes('SELL')) {
+          windowStartTs = data.waitWindowStartTs;
+          windowDuration = data.waitWindowDurationMs || 60000;
+          windowLabel = '⏱️ Wait Window: ';
+        }
+      }
+      
+      if (windowStartTs) {
+        const elapsed = Date.now() - windowStartTs;
+        const remaining = Math.max(0, windowDuration - elapsed);
+        const seconds = Math.ceil(remaining / 1000);
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        timerEl.innerText = windowLabel + mins + ':' + secs.toString().padStart(2, '0');
+        timerEl.style.display = 'block';
+        if (seconds < 10) {
+          timerEl.style.color = 'var(--danger-color)';
+        } else {
+          timerEl.style.color = 'var(--warning-color)';
+        }
+      } else {
+        timerEl.style.display = 'none';
+      }
+
 
       // 3. Position
       const pos = isLong ? data.longPosition : data.shortPosition;

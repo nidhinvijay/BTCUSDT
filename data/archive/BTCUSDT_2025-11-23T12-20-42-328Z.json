@@ -29,7 +29,7 @@
     ],
     "buyEntryWindowStartTs": 1763885910192,
     "sellEntryWindowStartTs": null,
-    "buyProfitWindowStartTs": 1763894499260,
+    "buyProfitWindowStartTs": 1763900332506,
     "sellProfitWindowStartTs": null,
     "waitWindowStartTs": null,
     "waitWindowDurationMs": null,
@@ -83,5 +83,5 @@
       }
     ]
   },
-  "timestamp": 1763894552639
+  "timestamp": 1763900389658
 }

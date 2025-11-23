@@ -188,10 +188,7 @@ async function main() {
           signalHistory: bot.fsm.getSignalHistory(),
           longPosition: bot.fsm.getLongPosition(),
           shortPosition: bot.fsm.getShortPosition(),
-          timers: {
-             // Extract timers from FSM state if needed, or expose getters
-             // For now, let's just send the basic status
-          }
+          ...bot.fsm.getState() // Include all FSM state data (timestamps, etc.)
         };
       });
       ws.send(JSON.stringify({ type: 'UPDATE', data: updates }));

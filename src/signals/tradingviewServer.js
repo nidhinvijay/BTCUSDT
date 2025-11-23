@@ -229,8 +229,8 @@ export function startTradingViewServer({ activeBots, logger }) {
 
     <!-- Strategy Toggle -->
     <div class="strategy-tabs">
-      <div class="strategy-tab active" onclick="switchStrategy('LONG')">LONG Strategy (BUY)</div>
-      <div class="strategy-tab" onclick="switchStrategy('SHORT')">SHORT Strategy (SELL)</div>
+      <div id="tabLong" class="strategy-tab active" onclick="switchStrategy('LONG')">LONG Strategy (BUY)</div>
+      <div id="tabShort" class="strategy-tab" onclick="switchStrategy('SHORT')">SHORT Strategy (SELL)</div>
     </div>
 
     <div class="dashboard-grid">
@@ -325,14 +325,24 @@ export function startTradingViewServer({ activeBots, logger }) {
       document.querySelectorAll('.symbol-tab').forEach(el => {
         el.classList.toggle('active', el.innerText === sym);
       });
+      
+      // Update Tab Labels based on Symbol Type
+      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => sym.includes(s));
+      if (isIndian) {
+        document.getElementById('tabLong').innerText = 'CE Strategy (Bullish)';
+        document.getElementById('tabShort').innerText = 'PE Strategy (Bearish)';
+      } else {
+        document.getElementById('tabLong').innerText = 'LONG Strategy (BUY)';
+        document.getElementById('tabShort').innerText = 'SHORT Strategy (SELL)';
+      }
+      
       updateDashboard();
     }
 
     function switchStrategy(strat) {
       currentStrategy = strat;
-      document.querySelectorAll('.strategy-tab').forEach(el => {
-        el.classList.toggle('active', el.innerText.includes(strat));
-      });
+      document.getElementById('tabLong').classList.toggle('active', strat === 'LONG');
+      document.getElementById('tabShort').classList.toggle('active', strat === 'SHORT');
       updateDashboard();
     }
 
@@ -375,12 +385,21 @@ export function startTradingViewServer({ activeBots, logger }) {
 
       const isLong = currentStrategy === 'LONG';
       
+      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => currentSymbol.includes(s));
+      
       // 1. FSM State
       const state = isLong ? data.buyState : data.sellState;
       const stateEl = document.getElementById('fsmStateDisplay');
       stateEl.innerText = state;
       stateEl.className = 'state-highlight ' + (isLong ? 'buy-color' : 'sell-color');
-      document.getElementById('fsmTitle').innerText = isLong ? 'BUY FSM STATE' : 'SELL FSM STATE';
+      
+      let fsmTitleText = '';
+      if (isIndian) {
+        fsmTitleText = isLong ? 'CE FSM STATE' : 'PE FSM STATE';
+      } else {
+        fsmTitleText = isLong ? 'BUY FSM STATE' : 'SELL FSM STATE';
+      }
+      document.getElementById('fsmTitle').innerText = fsmTitleText;
 
       // 2. Anchors
       const anchors = data.anchors || {};
@@ -445,7 +464,14 @@ export function startTradingViewServer({ activeBots, logger }) {
 
       // 3. Position
       const pos = isLong ? data.longPosition : data.shortPosition;
-      document.getElementById('posTitle').innerText = isLong ? 'LONG POSITION' : 'SHORT POSITION';
+      
+      let posTitleText = '';
+      if (isIndian) {
+        posTitleText = isLong ? 'CE POSITION' : 'PE POSITION';
+      } else {
+        posTitleText = isLong ? 'LONG POSITION' : 'SHORT POSITION';
+      }
+      document.getElementById('posTitle').innerText = posTitleText;
       document.getElementById('posSize').innerText = pos ? pos.qty : 'None';
       document.getElementById('posEntry').innerText = pos ? pos.entryPrice.toFixed(2) : '-';
       document.getElementById('lastPrice').innerText = data.pnl.lastPrice || '-';
@@ -469,13 +495,19 @@ export function startTradingViewServer({ activeBots, logger }) {
       const shortTrades = data.pnl.shortStats ? data.pnl.shortStats.tradeCount : 0;
       
       // Update title and strategy-specific metrics
+      let perfTitleText = '';
+      if (isIndian) {
+        perfTitleText = isLong ? 'CE PERFORMANCE' : 'PE PERFORMANCE';
+      } else {
+        perfTitleText = isLong ? 'LONG PERFORMANCE' : 'SHORT PERFORMANCE';
+      }
+      document.getElementById('perfTitle').innerText = perfTitleText;
+
       if (isLong) {
-        document.getElementById('perfTitle').innerText = 'LONG PERFORMANCE';
         document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' USDT';
         document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
         document.getElementById('strategyTrades').innerText = longTrades;
       } else {
-        document.getElementById('perfTitle').innerText = 'SHORT PERFORMANCE';
         document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' USDT';
         document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
         document.getElementById('strategyTrades').innerText = shortTrades;
@@ -491,11 +523,22 @@ export function startTradingViewServer({ activeBots, logger }) {
     }
 
     function updateTables(data) {
-      // Trades
+      const isLong = currentStrategy === 'LONG';
+      const targetSide = isLong ? 'BUY' : 'SELL';
+
+      // Trades - Filter by strategy (or side for legacy data)
       const tbody = document.querySelector('#tradesTable tbody');
       tbody.innerHTML = '';
-      const trades = (data.pnl.trades || []).slice().reverse().slice(0, 5);
-      trades.forEach(t => {
+      const allTrades = (data.pnl.trades || []).slice().reverse(); // Newest first
+      
+      const targetStrategy = isLong ? 'LONG' : 'SHORT';
+      const filteredTrades = allTrades.filter(t => {
+        if (t.strategy) return t.strategy === targetStrategy;
+        // Fallback for legacy data
+        return t.side === targetSide;
+      }).slice(0, 5);
+      
+      filteredTrades.forEach(t => {
         const row = \`<tr>
           <td>\${new Date(t.ts).toLocaleTimeString()}</td>
           <td>\${t.type}</td>
@@ -507,11 +550,13 @@ export function startTradingViewServer({ activeBots, logger }) {
         tbody.innerHTML += row;
       });
 
-      // Signals
+      // Signals - Filter by side
       const sbody = document.querySelector('#signalsTable tbody');
       sbody.innerHTML = '';
-      const signals = (data.signalHistory || []).slice(0, 5);
-      signals.forEach(s => {
+      const allSignals = (data.signalHistory || []); // Newest first usually
+      const filteredSignals = allSignals.filter(s => s.side === targetSide).slice(0, 5);
+      
+      filteredSignals.forEach(s => {
         const row = \`<tr>
           <td>\${new Date(s.ts).toLocaleTimeString()}</td>
           <td class="\${s.side === 'BUY' ? 'buy-color' : 'sell-color'}">\${s.side}</td>

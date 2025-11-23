@@ -1,23 +1,34 @@
 {
   "fsm": {
-    "buyState": "WAIT_FOR_SIGNAL",
-    "sellState": "WAIT_FOR_SIGNAL",
-    "savedBUYLTP": null,
-    "savedSELLLTP": null,
-    "buyEntryTrigger": null,
-    "buyStop": null,
-    "sellEntryTrigger": null,
-    "sellStop": null,
+    "buyState": "WAIT_WINDOW",
+    "sellState": "WAIT_WINDOW",
+    "savedBUYLTP": 86676.99,
+    "savedSELLLTP": 86656.34,
+    "buyEntryTrigger": 86677.49,
+    "buyStop": 86676.49,
+    "sellEntryTrigger": 86655.84,
+    "sellStop": 86656.84,
     "longPosition": null,
     "shortPosition": null,
-    "signalHistory": [],
-    "buyEntryWindowStartTs": null,
-    "sellEntryWindowStartTs": null,
+    "signalHistory": [
+      {
+        "ts": 1763920250610,
+        "side": "SELL",
+        "state": "WAIT_FOR_SIGNAL"
+      },
+      {
+        "ts": 1763920242911,
+        "side": "BUY",
+        "state": "WAIT_FOR_SIGNAL"
+      }
+    ],
+    "buyEntryWindowStartTs": 1763920245633,
+    "sellEntryWindowStartTs": 1763920253519,
     "buyProfitWindowStartTs": null,
     "sellProfitWindowStartTs": null,
-    "waitWindowStartTs": null,
-    "waitWindowDurationMs": null,
-    "waitWindowSource": null,
+    "waitWindowStartTs": 1763920255071,
+    "waitWindowDurationMs": 58448,
+    "waitWindowSource": "SELLENTRY_WINDOW",
     "waitForBuyEntryStartTs": null,
     "waitForBuyEntryFirstTickSeen": false,
     "waitForSellEntryStartTs": null,
@@ -54,5 +65,5 @@
     },
     "trades": []
   },
-  "timestamp": 1763920289398
+  "timestamp": 1763920289254
 }

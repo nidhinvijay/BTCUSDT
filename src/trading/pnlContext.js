@@ -148,6 +148,7 @@ export function createPnlContext({ symbol }) {
           side,
           qty,
           price,
+          strategy: "LONG", // Explicit strategy tag
           meta,
         });
       } else if (side === "SELL") {
@@ -169,6 +170,7 @@ export function createPnlContext({ symbol }) {
           side,
           qty,
           price,
+          strategy: "SHORT", // Explicit strategy tag
           meta,
         });
       }
@@ -203,6 +205,7 @@ export function createPnlContext({ symbol }) {
           qty,
           price,
           pnl,
+          strategy: "LONG", // Closing a LONG position
           meta,
         });
       } else if (side === "BUY" && positionSide === "SHORT") {
@@ -232,6 +235,7 @@ export function createPnlContext({ symbol }) {
           qty,
           price,
           pnl,
+          strategy: "SHORT", // Closing a SHORT position
           meta,
         });
       }

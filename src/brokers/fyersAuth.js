@@ -33,6 +33,19 @@ export class FyersAuth {
     }
 
     return false;
+  }
+
+  // Generate auth code URL (user needs to visit this) - API v3
+  getAuthCodeUrl() {
+    const state = crypto.randomBytes(16).toString('hex');
+    // Updated to v3 endpoint
+    const authUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${this.appId}&redirect_uri=${encodeURIComponent(this.redirectUri)}&response_type=code&state=${state}`;
+
+    return { authUrl, state };
+  }
+
+  // Exchange auth code for access token - API v3
+  async getAccessToken(authCode) {
     try {
       // V3 uses different hash algorithm
       const appIdHash = crypto

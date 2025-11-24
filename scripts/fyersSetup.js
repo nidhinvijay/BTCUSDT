@@ -22,7 +22,9 @@ async function main() {
 
   const appId = process.env.FYERS_APP_ID;
   const secretKey = process.env.FYERS_SECRET_KEY;
+
   const redirectUri = process.env.FYERS_REDIRECT_URI;
+  const pin = process.env.FYERS_PIN;
 
   if (!appId || !secretKey || appId === 'YOUR_FYERS_APP_ID') {
     console.error('❌ Please set FYERS_APP_ID and FYERS_SECRET_KEY in your .env file first!');
@@ -34,6 +36,7 @@ async function main() {
     appId,
     secretKey,
     redirectUri,
+    pin,
     logger
   });
 
@@ -47,7 +50,7 @@ async function main() {
 
   // Step 1: Generate auth URL
   const { authUrl, state } = fyersAuth.getAuthCodeUrl();
-  
+
   console.log('\n📋 Step 1: Open this URL in your browser and login:\n');
   console.log(authUrl);
   console.log('\n');
@@ -55,19 +58,19 @@ async function main() {
   // Step 2: Get auth code from user
   console.log('After logging in, you will see the AUTH CODE (JWT token).');
   console.log('It looks like: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\n');
-  
+
   const input = await question('Paste the AUTH CODE (JWT token) here: ');
-  
+
   // Try to extract auth code - v3 returns JWT directly
   let authCode = input.trim();
-  
+
   // If user pasted a URL instead of token, try to extract
   if (authCode.startsWith('http')) {
     try {
       const urlObj = new URL(authCode);
       const codeFromUrl = urlObj.searchParams.get('auth_code');
       const returnedState = urlObj.searchParams.get('state');
-      
+
       if (codeFromUrl) {
         authCode = codeFromUrl;
         if (returnedState !== state) {

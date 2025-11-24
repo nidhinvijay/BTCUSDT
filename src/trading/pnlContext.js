@@ -7,6 +7,8 @@ export function createPnlContext({ symbol }) {
   let lastPrice = null;
   let realizedPnl = 0;
   let lifetimePnl = 0;
+  let lifetimeLongPnl = 0;
+  let lifetimeShortPnl = 0;
   let tradeCount = 0;
   const trades = [];
 
@@ -86,6 +88,13 @@ export function createPnlContext({ symbol }) {
     const totalPnl = realizedPnl + unrealizedPnl;
     const metrics = calculateMetrics();
 
+    // Calculate real-time lifetime PnL (Stored Lifetime + Current Session Realized)
+    // Note: We don't add unrealized to lifetime usually, but if desired, we could.
+    // Standard practice: Lifetime = Closed Trades PnL.
+    const currentLifetimePnl = lifetimePnl + realizedPnl;
+    const currentLifetimeLongPnl = lifetimeLongPnl + longStats.realizedPnl;
+    const currentLifetimeShortPnl = lifetimeShortPnl + shortStats.realizedPnl;
+
     return {
       symbol,
       positionQty,
@@ -95,7 +104,9 @@ export function createPnlContext({ symbol }) {
       realizedPnl: Number(realizedPnl.toFixed(2)),
       unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
       totalPnl: Number(totalPnl.toFixed(2)),
-      lifetimePnl: Number((lifetimePnl + realizedPnl).toFixed(2)), // Lifetime includes current session realized
+      lifetimePnl: Number(currentLifetimePnl.toFixed(2)),
+      lifetimeLongPnl: Number(currentLifetimeLongPnl.toFixed(2)),
+      lifetimeShortPnl: Number(currentLifetimeShortPnl.toFixed(2)),
       tradeCount,
       longStats: {
         realizedPnl: Number(longStats.realizedPnl.toFixed(2)),
@@ -128,7 +139,7 @@ export function createPnlContext({ symbol }) {
       return snapshot();
     },
 
-    openPosition({ side, qty, price, meta = {} }) {
+    openPosition({ side, qty, price, mode = 'PAPER', meta = {} }) {
       if (side === "BUY") {
         // Opening LONG position
         if (positionSide === "SHORT") {
@@ -149,6 +160,7 @@ export function createPnlContext({ symbol }) {
           qty,
           price,
           strategy: "LONG", // Explicit strategy tag
+          mode, // PAPER or LIVE
           meta,
         });
       } else if (side === "SELL") {
@@ -171,20 +183,21 @@ export function createPnlContext({ symbol }) {
           qty,
           price,
           strategy: "SHORT", // Explicit strategy tag
+          mode, // PAPER or LIVE
           meta,
         });
       }
       return snapshot();
     },
 
-    closePosition({ side, qty, price, meta = {} }) {
+    closePosition({ side, qty, price, mode = 'PAPER', meta = {} }) {
       if (side === "SELL" && positionSide === "LONG") {
         // Closing LONG with SELL
         if (qty > positionQty) qty = positionQty; // safety
 
         const pnl = (price - avgPrice) * qty;
         realizedPnl += pnl;
-        
+
         // Update Long Stats
         longStats.realizedPnl += pnl;
         longStats.tradeCount += 1;
@@ -206,6 +219,7 @@ export function createPnlContext({ symbol }) {
           price,
           pnl,
           strategy: "LONG", // Closing a LONG position
+          mode, // PAPER or LIVE
           meta,
         });
       } else if (side === "BUY" && positionSide === "SHORT") {
@@ -236,6 +250,7 @@ export function createPnlContext({ symbol }) {
           price,
           pnl,
           strategy: "SHORT", // Closing a SHORT position
+          mode, // PAPER or LIVE
           meta,
         });
       }
@@ -250,6 +265,8 @@ export function createPnlContext({ symbol }) {
         positionSide,
         realizedPnl,
         lifetimePnl,
+        lifetimeLongPnl,
+        lifetimeShortPnl,
         tradeCount,
         longStats,
         shortStats,
@@ -264,8 +281,10 @@ export function createPnlContext({ symbol }) {
       positionSide = state.positionSide || null;
       realizedPnl = state.realizedPnl || 0;
       lifetimePnl = state.lifetimePnl || 0;
+      lifetimeLongPnl = state.lifetimeLongPnl || 0;
+      lifetimeShortPnl = state.lifetimeShortPnl || 0;
       tradeCount = state.tradeCount || 0;
-      
+
       longStats = state.longStats || { realizedPnl: 0, tradeCount: 0 };
       shortStats = state.shortStats || { realizedPnl: 0, tradeCount: 0 };
 
@@ -277,13 +296,15 @@ export function createPnlContext({ symbol }) {
     reset() {
       // Add current session realized PnL to lifetime PnL before resetting
       lifetimePnl += realizedPnl;
-      
+      lifetimeLongPnl += longStats.realizedPnl;
+      lifetimeShortPnl += shortStats.realizedPnl;
+
       positionQty = 0;
       avgPrice = 0;
       positionSide = null;
       realizedPnl = 0;
       tradeCount = 0;
-      
+
       // Reset split stats
       longStats = { realizedPnl: 0, tradeCount: 0 };
       shortStats = { realizedPnl: 0, tradeCount: 0 };

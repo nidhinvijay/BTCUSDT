@@ -1,4 +1,7 @@
 node_modules
-# .env
+.env
 npm-debug.log
 .DS_Store
+
+# Data folder (contains tokens and session state)
+data/

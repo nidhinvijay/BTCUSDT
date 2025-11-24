@@ -7,28 +7,32 @@ import path from 'path';
 const TOKEN_FILE = path.resolve('data', 'fyers_token.json');
 
 export class FyersAuth {
-  constructor({ appId, secretKey, redirectUri, logger }) {
+  constructor({ appId, secretKey, redirectUri, pin, logger }) {
     this.appId = appId;
     this.secretKey = secretKey;
     this.redirectUri = redirectUri;
+    this.pin = pin;
     this.logger = logger;
     this.accessToken = null;
-    
+    this.refreshToken = null;
+    this.expiresAt = 0;
+
     // Try to load existing token
     this.loadToken();
   }
 
-  // Generate auth code URL (user needs to visit this) - API v3
-  getAuthCodeUrl() {
-    const state = crypto.randomBytes(16).toString('hex');
-    // Updated to v3 endpoint
-    const authUrl = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${this.appId}&redirect_uri=${encodeURIComponent(this.redirectUri)}&response_type=code&state=${state}`;
-    
-    return { authUrl, state };
-  }
+  // Initialize: Check expiry and refresh if needed
+  async initialize() {
+    if (this.isAuthenticated()) {
+      return true;
+    }
 
-  // Exchange auth code for access token - API v3
-  async getAccessToken(authCode) {
+    if (this.refreshToken) {
+      this.logger.info('Access token expired, attempting refresh...');
+      return await this.refreshAccessToken();
+    }
+
+    return false;
     try {
       // V3 uses different hash algorithm
       const appIdHash = crypto
@@ -53,11 +57,13 @@ export class FyersAuth {
 
       if (response.data.code === 200 && response.data.s === 'ok') {
         this.accessToken = response.data.access_token;
+        this.refreshToken = response.data.refresh_token;
         this.saveToken({
           accessToken: this.accessToken,
+          refreshToken: this.refreshToken,
           expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
         });
-        
+
         this.logger.info('✅ Fyers API v3 access token obtained successfully');
         return this.accessToken;
       } else {
@@ -66,6 +72,65 @@ export class FyersAuth {
     } catch (error) {
       this.logger.error({ error: error.message }, 'Failed to get Fyers access token');
       throw error;
+    }
+  }
+
+
+  // Refresh Access Token using Refresh Token
+  async refreshAccessToken() {
+    if (!this.refreshToken) {
+      this.logger.error('Cannot refresh: No refresh token available');
+      return false;
+    }
+    if (!this.pin) {
+      this.logger.error('Cannot refresh: PIN not configured');
+      return false;
+    }
+
+    try {
+      const appIdHash = crypto
+        .createHash('sha256')
+        .update(`${this.appId}:${this.secretKey}`)
+        .digest('hex');
+
+      const payload = {
+        grant_type: 'refresh_token',
+        appIdHash: appIdHash,
+        refresh_token: this.refreshToken,
+        pin: this.pin
+      };
+
+      this.logger.info('Sending refresh token request...');
+      const response = await axios.post(
+        'https://api-t1.fyers.in/api/v3/validate-refresh-token',
+        payload,
+        {
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+
+      if (response.data.code === 200 && response.data.s === 'ok') {
+        this.accessToken = response.data.access_token;
+        // Fyers might rotate the refresh token
+        if (response.data.refresh_token) {
+          this.refreshToken = response.data.refresh_token;
+        }
+
+        this.saveToken({
+          accessToken: this.accessToken,
+          refreshToken: this.refreshToken,
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+        });
+
+        this.logger.info('✅ Token refreshed successfully');
+        return true;
+      } else {
+        this.logger.error(`Token refresh failed: ${response.data.message}`);
+        return false;
+      }
+    } catch (error) {
+      this.logger.error({ error: error.message }, 'Failed to refresh token');
+      return false;
     }
   }
 
@@ -83,14 +148,17 @@ export class FyersAuth {
     try {
       if (fs.existsSync(TOKEN_FILE)) {
         const tokenData = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8'));
-        
+
+        this.accessToken = tokenData.accessToken;
+        this.refreshToken = tokenData.refreshToken;
+        this.expiresAt = tokenData.expiresAt || 0;
+
         // Check if token is still valid (not expired)
-        if (tokenData.expiresAt && Date.now() < tokenData.expiresAt) {
-          this.accessToken = tokenData.accessToken;
+        if (this.expiresAt && Date.now() < this.expiresAt) {
           this.logger.info('Loaded existing Fyers access token');
           return true;
         } else {
-          this.logger.warn('Fyers token expired');
+          this.logger.warn('Fyers access token expired (will try refresh if available)');
         }
       }
     } catch (error) {
@@ -101,7 +169,7 @@ export class FyersAuth {
 
   // Check if we have a valid token
   isAuthenticated() {
-    return !!this.accessToken;
+    return !!this.accessToken && Date.now() < this.expiresAt;
   }
 
   // Get current access token

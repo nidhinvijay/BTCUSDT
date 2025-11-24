@@ -25,16 +25,19 @@ async function main() {
   // Initialize Fyers authentication if configured
   let fyersAuth = null;
   let fyersAccessToken = null;
-  
+
   if (config.fyers.enabled) {
     try {
       fyersAuth = new FyersAuth({
         appId: config.fyers.appId,
         secretKey: config.fyers.secretKey,
         redirectUri: config.fyers.redirectUri,
+        pin: config.fyers.pin,
         logger
       });
-      
+
+      await fyersAuth.initialize();
+
       if (fyersAuth.isAuthenticated()) {
         fyersAccessToken = fyersAuth.getToken();
         logger.info('✅ Fyers authenticated - Indian indices will use live data');
@@ -109,7 +112,7 @@ async function main() {
 
     // 5. Market stream (conditional: Binance or Fyers)
     const exchange = config.exchangeMapping[symbol] || 'binance';
-    
+
     if (exchange === 'fyers') {
       // Fyers stream for Indian indices
       if (fyersAccessToken) {
@@ -117,6 +120,7 @@ async function main() {
         startFyersStream({
           symbol,
           accessToken: fyersAccessToken,
+          appId: config.fyers.appId,
           onTick: (tick) => {
             pnlContext.updateMarkPrice(tick.ltp);
             fsm.onTick(tick);

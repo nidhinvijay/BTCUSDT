@@ -231,6 +231,10 @@ export function startTradingViewServer({ activeBots, logger }) {
     <div class="strategy-tabs">
       <div id="tabLong" class="strategy-tab active" onclick="switchStrategy('LONG')">LONG Strategy (BUY)</div>
       <div id="tabShort" class="strategy-tab" onclick="switchStrategy('SHORT')">SHORT Strategy (SELL)</div>
+      <div style="margin-left: auto; display: flex; gap: 5px;">
+        <div id="modePaper" class="strategy-tab active" onclick="switchMode('PAPER')">PAPER</div>
+        <div id="modeLive" class="strategy-tab" onclick="switchMode('LIVE')">LIVE</div>
+      </div>
     </div>
 
     <div class="dashboard-grid">
@@ -258,7 +262,7 @@ export function startTradingViewServer({ activeBots, logger }) {
         <h3 id="perfTitle">LONG PERFORMANCE</h3>
         <div class="stat-row"><span>Strategy PnL:</span> <span id="strategyPnl" class="stat-value">0.00 USDT</span></div>
         <div class="stat-row"><span>Strategy Trades:</span> <span id="strategyTrades" class="stat-value">0</span></div>
-        <div class="stat-row"><span>Session PnL (Total):</span> <span id="totalPnl" class="stat-value">0.00 USDT</span></div>
+        <div class="stat-row"><span>Session PnL:</span> <span id="totalPnl" class="stat-value">0.00 USDT</span></div>
         <div class="stat-row"><span>Lifetime PnL:</span> <span id="lifetimePnl" class="stat-value" style="color: var(--accent-color)">0.00 USDT</span></div>
         <div class="stat-row"><span>Total Trades:</span> <span id="tradeCount" class="stat-value">0</span></div>
         <div class="stat-row"><span>Win Rate:</span> <span id="winRate" class="stat-value">0%</span></div>
@@ -288,6 +292,7 @@ export function startTradingViewServer({ activeBots, logger }) {
   <script>
     let currentSymbol = '${config.defaultSymbol}';
     let currentStrategy = 'LONG'; // LONG or SHORT
+    let currentMode = 'PAPER'; // PAPER or LIVE
     let allData = {};
 
     // Initialize Symbol Tabs
@@ -343,6 +348,13 @@ export function startTradingViewServer({ activeBots, logger }) {
       currentStrategy = strat;
       document.getElementById('tabLong').classList.toggle('active', strat === 'LONG');
       document.getElementById('tabShort').classList.toggle('active', strat === 'SHORT');
+      updateDashboard();
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      document.getElementById('modePaper').classList.toggle('active', mode === 'PAPER');
+      document.getElementById('modeLive').classList.toggle('active', mode === 'LIVE');
       updateDashboard();
     }
 
@@ -507,14 +519,32 @@ export function startTradingViewServer({ activeBots, logger }) {
         document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' USDT';
         document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
         document.getElementById('strategyTrades').innerText = longTrades;
+        
+        // Session PnL = Realized (Long) + Unrealized (Long)
+        const sessionPnl = longPnl + unrealized;
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' USDT';
+        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+
+        // Lifetime PnL (Long)
+        const lifeLong = data.pnl.lifetimeLongPnl || 0;
+        document.getElementById('lifetimePnl').innerText = lifeLong.toFixed(2) + ' USDT';
+        document.getElementById('lifetimePnl').style.color = lifeLong >= 0 ? '#3fb950' : '#f85149';
       } else {
         document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' USDT';
         document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
         document.getElementById('strategyTrades').innerText = shortTrades;
+
+        // Session PnL = Realized (Short) + Unrealized (Short)
+        const sessionPnl = shortPnl + unrealized;
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' USDT';
+        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+
+        // Lifetime PnL (Short)
+        const lifeShort = data.pnl.lifetimeShortPnl || 0;
+        document.getElementById('lifetimePnl').innerText = lifeShort.toFixed(2) + ' USDT';
+        document.getElementById('lifetimePnl').style.color = lifeShort >= 0 ? '#3fb950' : '#f85149';
       }
       
-      document.getElementById('totalPnl').innerText = data.pnl.totalPnl + ' USDT';
-      document.getElementById('lifetimePnl').innerText = (data.pnl.lifetimePnl || 0).toFixed(2) + ' USDT';
       document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
       document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
 
@@ -533,6 +563,10 @@ export function startTradingViewServer({ activeBots, logger }) {
       
       const targetStrategy = isLong ? 'LONG' : 'SHORT';
       const filteredTrades = allTrades.filter(t => {
+        // Filter by Mode
+        if (t.mode && t.mode !== currentMode) return false;
+        if (!t.mode && currentMode === 'LIVE') return false; // Legacy trades are assumed PAPER
+
         if (t.strategy) return t.strategy === targetStrategy;
         // Fallback for legacy data
         return t.side === targetSide;
@@ -588,17 +622,17 @@ export function startTradingViewServer({ activeBots, logger }) {
   // ------------------------------------------------------------
   app.post("/webhook", (req, res) => {
     const message = req.body;
-    
+
     // Parse message
     const { side } = parseTradingViewMessage(message);
-    
+
     // Determine Symbol (Default to BTCUSDT if not found)
     // We look for "sym=BTCUSDT" in the message string
     let symbol = config.defaultSymbol;
     const match = message.match(/sym=([A-Z0-9]+)/i);
     if (match && match[1]) {
       const extracted = match[1].toUpperCase();
-      
+
       // Check for exact match first
       if (activeBots.has(extracted)) {
         symbol = extracted;
@@ -649,12 +683,12 @@ export function startTradingViewServer({ activeBots, logger }) {
 
     // Relay
     broadcastToRelays({
-        message: message,
-        type: "tradingview-signal",
-        side,
-        symbol,
-        ts: Date.now(),
-      }, logger);
+      message: message,
+      type: "tradingview-signal",
+      side,
+      symbol,
+      ts: Date.now(),
+    }, logger);
   });
 
   // ------------------------------------------------------------
@@ -676,7 +710,7 @@ export function startTradingViewServer({ activeBots, logger }) {
     // Trigger the scheduler's reset logic manually? 
     // Or just replicate it here.
     // Let's replicate the archive logic for single symbol.
-    
+
     const filePath = path.resolve('data', `${symbol}.json`);
     if (fs.existsSync(filePath)) {
       try {
@@ -686,11 +720,11 @@ export function startTradingViewServer({ activeBots, logger }) {
         const archivePath = path.join(archiveDir, `${symbol}_${timestamp}.json`);
         fs.copyFileSync(filePath, archivePath);
         fs.unlinkSync(filePath);
-      } catch(e) {
+      } catch (e) {
         logger.error(e, "Reset failed");
       }
     }
-    
+
     res.json({ success: true, message: "Resetting...", symbol });
     setTimeout(() => process.exit(0), 500);
   });
@@ -722,7 +756,7 @@ export function startTradingViewServer({ activeBots, logger }) {
       });
 
       const { authUrl } = fyersAuth.getAuthCodeUrl();
-      
+
       // Redirect to Fyers login
       res.redirect(authUrl);
     });
@@ -789,15 +823,15 @@ export function startTradingViewServer({ activeBots, logger }) {
           </body>
         </html>
       `);
-      
+
       logger.info('Fyers authentication successful via dashboard');
-      
+
       // Restart needed to load new token - we could also hot-reload here
       setTimeout(() => {
         logger.info('Restarting to load new Fyers token...');
         process.exit(0); // PM2/systemd will restart
       }, 5000);
-      
+
     } catch (error) {
       logger.error({ error }, 'Fyers callback error');
       res.send(`
@@ -816,10 +850,10 @@ export function startTradingViewServer({ activeBots, logger }) {
     // Check current Fyers auth status
     import('../brokers/fyersAuth.js').then(({ FyersAuth }) => {
       if (!config.fyers.enabled) {
-        return res.json({ 
-          authenticated: false, 
+        return res.json({
+          authenticated: false,
           configured: false,
-          message: 'Fyers not configured in .env' 
+          message: 'Fyers not configured in .env'
         });
       }
 
@@ -831,7 +865,7 @@ export function startTradingViewServer({ activeBots, logger }) {
       });
 
       const isAuth = fyersAuth.isAuthenticated();
-      res.json({ 
+      res.json({
         authenticated: isAuth,
         configured: true,
         message: isAuth ? 'Fyers authenticated' : 'Authentication required'

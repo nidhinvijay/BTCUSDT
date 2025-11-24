@@ -2,12 +2,12 @@
 // Fyers WebSocket wrapper for market data streaming
 import { isMarketOpen, getMarketStatus } from '../utils/marketHours.js';
 
-export function startFyersStream({ symbol, accessToken, onTick, logger }) {
+export function startFyersStream({ symbol, accessToken, appId, onTick, logger }) {
   // Note: Fyers WebSocket requires their Python/Node SDK
   // For now, we'll use polling as a fallback
-  
+
   let intervalId = null;
-  
+
   const pollPrice = async () => {
     try {
       // Check if market is open
@@ -16,11 +16,11 @@ export function startFyersStream({ symbol, accessToken, onTick, logger }) {
         logger.info({ symbol, status: status.message }, 'Skipping Fyers poll - market closed');
         return;
       }
-      
+
       // Import dynamically to avoid circular deps
       const { FyersMarketData } = await import('../brokers/fyersMarketData.js');
-      const marketData = new FyersMarketData({ accessToken, logger });
-      
+      const marketData = new FyersMarketData({ appId, accessToken, logger });
+
       // Map symbol to Fyers format (v3)
       let fyersSymbol;
       if (symbol === 'NIFTY') {
@@ -32,9 +32,9 @@ export function startFyersStream({ symbol, accessToken, onTick, logger }) {
       } else {
         fyersSymbol = symbol;
       }
-      
+
       const quotes = await marketData.getQuotes([fyersSymbol]);
-      
+
       if (quotes && quotes[fyersSymbol]) {
         const quote = quotes[fyersSymbol].v;
         onTick({
@@ -48,15 +48,15 @@ export function startFyersStream({ symbol, accessToken, onTick, logger }) {
       logger.error({ error: error.message, symbol }, 'Fyers polling error');
     }
   };
-  
+
   // Poll every 1 second
   intervalId = setInterval(pollPrice, 1000);
-  
+
   // Initial fetch
   pollPrice();
-  
+
   logger.info({ symbol }, 'Started Fyers price polling');
-  
+
   return {
     close: () => {
       if (intervalId) {

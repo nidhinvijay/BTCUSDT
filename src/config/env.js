@@ -39,6 +39,7 @@ export const config = {
     appId: process.env.FYERS_APP_ID,
     secretKey: process.env.FYERS_SECRET_KEY,
     redirectUri: process.env.FYERS_REDIRECT_URI,
+    pin: process.env.FYERS_PIN,
     enabled: process.env.FYERS_APP_ID && process.env.FYERS_APP_ID !== 'YOUR_FYERS_APP_ID'
   },
 

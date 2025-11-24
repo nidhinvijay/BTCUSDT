@@ -2,19 +2,21 @@
 import axios from 'axios';
 
 export class FyersMarketData {
-  constructor({ accessToken, logger }) {
+  constructor({ appId, accessToken, logger }) {
+    this.appId = appId;
     this.accessToken = accessToken;
     this.logger = logger;
-    this.baseUrl = 'https://api-t1.fyers.in/data-rest/v3'; // Updated to v3
+    this.baseUrl = 'https://api-t1.fyers.in/data-rest/v3'; // Updated to correct v3 endpoint
   }
 
   // Get current market quotes
   async getQuotes(symbols) {
     try {
       const symbolString = symbols.join(',');
-      const response = await axios.get(`${this.baseUrl}/quotes/`, {
+
+      const response = await axios.get(`${this.baseUrl}/quotes`, {
         headers: {
-          Authorization: `${this.accessToken}`,
+          Authorization: `${this.appId}:${this.accessToken}`,
         },
         params: {
           symbols: symbolString,
@@ -35,9 +37,9 @@ export class FyersMarketData {
   // Get historical data
   async getHistory({ symbol, resolution, dateFrom, dateTo }) {
     try {
-      const response = await axios.get(`${this.baseUrl}/history/`, {
+      const response = await axios.get(`${this.baseUrl}/history`, {
         headers: {
-          Authorization: `${this.accessToken}`,
+          Authorization: `${this.appId}:${this.accessToken}`,
         },
         params: {
           symbol,
@@ -62,9 +64,9 @@ export class FyersMarketData {
   // Get market depth
   async getDepth(symbol) {
     try {
-      const response = await axios.get(`${this.baseUrl}/depth/`, {
+      const response = await axios.get(`${this.baseUrl}/depth`, {
         headers: {
-          Authorization: `${this.accessToken}`,
+          Authorization: `${this.appId}:${this.accessToken}`,
         },
         params: {
           symbol,

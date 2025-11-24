@@ -570,7 +570,7 @@ export function startTradingViewServer({ activeBots, logger }) {
         if (t.strategy) return t.strategy === targetStrategy;
         // Fallback for legacy data
         return t.side === targetSide;
-      }).slice(0, 5);
+      });
       
       filteredTrades.forEach(t => {
         const row = \`<tr>

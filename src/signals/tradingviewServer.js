@@ -588,7 +588,7 @@ export function startTradingViewServer({ activeBots, logger }) {
       const sbody = document.querySelector('#signalsTable tbody');
       sbody.innerHTML = '';
       const allSignals = (data.signalHistory || []); // Newest first usually
-      const filteredSignals = allSignals.filter(s => s.side === targetSide).slice(0, 5);
+      const filteredSignals = allSignals.filter(s => s.side === targetSide);
       
       filteredSignals.forEach(s => {
         const row = \`<tr>

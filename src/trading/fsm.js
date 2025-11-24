@@ -258,7 +258,6 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       side: "BUY",
       state: buyState,
     });
-    if (signalHistory.length > 10) signalHistory.pop();
     transitionTo("BUY", STATES.BUYSIGNAL);
   }
 
@@ -282,7 +281,6 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       side: "SELL",
       state: sellState,
     });
-    if (signalHistory.length > 10) signalHistory.pop();
     transitionTo("SELL", STATES.SELLSIGNAL);
   }
 
@@ -591,7 +589,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   );
 
   // --- Persistence ---
-  
+
   function getState() {
     return {
       buyState,
@@ -627,20 +625,20 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   function restoreState(state) {
     if (!state) return;
     logger.info({ state }, "Restoring FSM state...");
-    
+
     buyState = state.buyState || STATES.WAIT_FOR_SIGNAL;
     sellState = state.sellState || STATES.WAIT_FOR_SIGNAL;
-    
+
     savedBUYLTP = state.savedBUYLTP;
     savedSELLLTP = state.savedSELLLTP;
     buyEntryTrigger = state.buyEntryTrigger;
     buyStop = state.buyStop;
     sellEntryTrigger = state.sellEntryTrigger;
     sellStop = state.sellStop;
-    
+
     longPosition = state.longPosition;
     shortPosition = state.shortPosition;
-    
+
     if (state.signalHistory) {
       signalHistory.length = 0;
       signalHistory.push(...state.signalHistory);
@@ -650,17 +648,17 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     sellEntryWindowStartTs = state.sellEntryWindowStartTs;
     buyProfitWindowStartTs = state.buyProfitWindowStartTs;
     sellProfitWindowStartTs = state.sellProfitWindowStartTs;
-    
+
     waitWindowStartTs = state.waitWindowStartTs;
     waitWindowDurationMs = state.waitWindowDurationMs;
     waitWindowSource = state.waitWindowSource;
-    
+
     waitForBuyEntryStartTs = state.waitForBuyEntryStartTs;
     waitForBuyEntryFirstTickSeen = state.waitForBuyEntryFirstTickSeen;
-    
+
     waitForSellEntryStartTs = state.waitForSellEntryStartTs;
     waitForSellEntryFirstTickSeen = state.waitForSellEntryFirstTickSeen;
-    
+
     buySignalFirstTickPending = state.buySignalFirstTickPending;
     sellSignalFirstTickPending = state.sellSignalFirstTickPending;
     buyEntryFirstTickPending = state.buyEntryFirstTickPending;
@@ -691,7 +689,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       }
       const { ltp, ts } = lastTick;
       let closed = false;
-      
+
       if (longIsOpen()) {
         closeLong(ltp, ts, "MANUAL_OVERRIDE");
         closed = true;
@@ -700,7 +698,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         closeShort(ltp, ts, "MANUAL_OVERRIDE");
         closed = true;
       }
-      
+
       // Reset states to WAIT_FOR_SIGNAL to stop any pending windows
       if (closed) {
         transitionTo("BUY", STATES.WAIT_FOR_SIGNAL);

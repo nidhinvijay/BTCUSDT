@@ -234,19 +234,6 @@
         <div class="stat-row"><span>Unrealized PnL:</span> <span id="unrealizedPnl" class="stat-value">0.00</span></div>
       </div>
 
-      <!-- Performance Card -->
-      <div class="card">
-        <h3 id="perfTitle">LONG PERFORMANCE</h3>
-        <div class="stat-row"><span>Strategy PnL:</span> <span id="strategyPnl" class="stat-value">0.00 USDT</span></div>
-        <div class="stat-row"><span>Strategy Trades:</span> <span id="strategyTrades" class="stat-value">0</span></div>
-        <div class="stat-row"><span>Session PnL:</span> <span id="totalPnl" class="stat-value">0.00 USDT</span></div>
-        <div class="stat-row"><span>Total Trades:</span> <span id="tradeCount" class="stat-value">0</span></div>
-        <div class="stat-row"><span>Win Rate:</span> <span id="winRate" class="stat-value">0%</span></div>
-      </div>
-
-    </div>
-
-    <!-- History Tables -->
     <div class="dashboard-grid" style="margin-top: 20px;">
       <div class="card">
         <h3>Recent Trades</h3>
@@ -555,6 +542,11 @@
           document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
           document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
         }
+        
+        // Cumulative PnL (Long + Short) - Always visible
+        const cumulativePnl = data.pnl.totalPnl || 0;
+        document.getElementById('cumulativePnl').innerText = cumulativePnl.toFixed(2) + ' ' + currency;
+        document.getElementById('cumulativePnl').style.color = cumulativePnl >= 0 ? '#3fb950' : '#f85149';
         
         document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
         document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';

@@ -78,21 +78,13 @@ export function createSmartBroker({ paperBroker, liveBroker, pnlContext, logger 
     },
 
     cancelOrder(orderId) {
-      // Cancellation is tricky because IDs differ between Paper and Live.
-      // For now, we assume the FSM tracks the Paper ID.
-      // Ideally, SmartBroker should map PaperID -> LiveID.
-      // For this MVP, we will just pass through to Paper, 
-      // and if we are Live, we might need a way to cancel all or specific live orders.
-      // TODO: Implement ID mapping. 
       return paperBroker.cancelOrder(orderId);
     },
 
-    // Hook to be called on every tick to monitor PnL changes (e.g. unrealized PnL drop)
     onTick() {
       checkAutoSwitch();
     },
 
-    // Expose status for UI/Logging
     isLive() {
       return isLiveActive;
     }

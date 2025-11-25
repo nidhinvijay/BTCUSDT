@@ -1,3 +1,5 @@
+
+
 export function createLiveBroker({ symbol, logger }) {
   const log = (msg) => logger.info(`[LIVE BROKER MOCK] [${symbol}] ${msg}`);
 
@@ -20,9 +22,17 @@ export function createLiveBroker({ symbol, logger }) {
     },
 
     // Emergency close all for the auto-cut logic
-    closeAll() {
-      log(`Would CLOSE ALL positions immediately (Auto-Cut triggered)`);
-      return Promise.resolve(true);
+    closeAll: async () => {
+      logger.info(`[LiveBroker] ⚠️ CLOSE ALL POSITIONS triggered (Simulation)`);
+      return true;
+    },
+    closeLong: async () => {
+      logger.info(`[LiveBroker] ⚠️ CLOSE LONG POSITIONS triggered (Simulation)`);
+      return true;
+    },
+    closeShort: async () => {
+      logger.info(`[LiveBroker] ⚠️ CLOSE SHORT POSITIONS triggered (Simulation)`);
+      return true;
     }
   };
 }

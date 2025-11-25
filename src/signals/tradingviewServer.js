@@ -10,21 +10,75 @@ let wssInstance = null;
 
 function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
   if (!rawSymbol) return null;
-  const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'];
-  if (!allowed.includes(baseSymbol)) return null;
-  const cleaned = rawSymbol.toUpperCase();
-  if (cleaned === baseSymbol) return null;
-  if (cleaned.includes(':')) {
-    return { display: cleaned.split(':').pop(), fyersSymbol: cleaned };
+const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'];
+const cleaned = rawSymbol.toUpperCase();
+if (cleaned === baseSymbol) return null;
+  if (!allowed.includes(baseSymbol)) {
+    const fyersSymbol = cleaned.includes(':') ? cleaned : `NSE:${cleaned}`;
+    const display = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
+    return { display, fyersSymbol };
   }
-  const prefix =
-    baseSymbol === 'SENSEX'
-      ? 'BSE'
-      : baseSymbol === 'BTCUSDT'
-      ? ''
-      : 'NSE';
-  const fyersSymbol = prefix ? `${prefix}:${cleaned}` : cleaned;
-  return { display: cleaned, fyersSymbol };
+
+const mapped = mapIndianOptionToFyers(cleaned);
+if (mapped) {
+  const display = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
+  return { display, fyersSymbol: mapped };
+}
+
+const fallback = cleaned.includes(':') ? cleaned : `NSE:${cleaned}`;
+const fallbackDisplay = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
+return { display: fallbackDisplay, fyersSymbol: fallback };
+}
+
+function mapIndianOptionToFyers(symbol) {
+  const match = /^(NIFTY|FINNIFTY|BANKNIFTY|SENSEX)(\d{2})(\d{2})(\d{2})([CP])(\d+)$/.exec(symbol);
+  if (!match) {
+    return symbol.includes(':') ? symbol : `NSE:${symbol}`;
+  }
+
+  const [, root, yy, mm, dd, cp, strike] = match;
+  const cepe = cp === 'C' ? 'CE' : 'PE';
+
+  const MONTH_3L = {
+    '01': 'JAN',
+    '02': 'FEB',
+    '03': 'MAR',
+    '04': 'APR',
+    '05': 'MAY',
+    '06': 'JUN',
+    '07': 'JUL',
+    '08': 'AUG',
+    '09': 'SEP',
+    '10': 'OCT',
+    '11': 'NOV',
+    '12': 'DEC',
+  };
+
+  const MONTH_LETTER = {
+    '01': 'A',
+    '02': 'F',
+    '03': 'M',
+    '04': 'A',
+    '05': 'M',
+    '06': 'J',
+    '07': 'J',
+    '08': 'A',
+    '09': 'S',
+    '10': 'O',
+    '11': 'N',
+    '12': 'D',
+  };
+
+  if (root === 'NIFTY' || root === 'FINNIFTY') {
+    const mon3 = MONTH_3L[mm];
+    if (!mon3) return null;
+    return `NSE:${root}${yy}${mon3}${strike}${cepe}`;
+  }
+
+  const monLetter = MONTH_LETTER[mm];
+  if (!monLetter) return null;
+  const expiryCode = `${yy}${monLetter}${dd}`;
+  return `NSE:${root}${expiryCode}${strike}${cepe}`;
 }
 
 export function setWss(wss) {

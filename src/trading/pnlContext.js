@@ -13,6 +13,9 @@ export function createPnlContext({ symbol }) {
   // Split Stats
   let longStats = { realizedPnl: 0, tradeCount: 0 };
   let shortStats = { realizedPnl: 0, tradeCount: 0 };
+  
+  // Live Stats (Subset of trades executed in LIVE mode)
+  let liveStats = { realizedPnl: 0, tradeCount: 0 };
 
   function getUnrealizedPnl() {
     if (lastPrice == null) return 0;
@@ -65,8 +68,12 @@ export function createPnlContext({ symbol }) {
     const avgTradePnl =
       closedTrades.length > 0 ? realizedPnl / closedTrades.length : 0;
 
-    // PnL percentage (relative to initial capital assumption: $1000)
-    const initialCapital = 1000; // Default assumption
+    // PnL percentage
+    // For Indian indices, we align with the SmartBroker capital base (100,000)
+    // For Crypto, we keep the default 1,000 assumption.
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => symbol.includes(s));
+    const initialCapital = isIndian ? 100000 : 1000; 
+    
     const pnlPercentage = (totalPnl / initialCapital) * 100;
 
     return {
@@ -115,6 +122,10 @@ export function createPnlContext({ symbol }) {
         realizedPnl: Number(shortStats.realizedPnl.toFixed(2)),
         tradeCount: shortStats.tradeCount
       },
+      liveStats: {
+        realizedPnl: Number(liveStats.realizedPnl.toFixed(2)),
+        tradeCount: liveStats.tradeCount
+      },
       trades,
       metrics,
     };
@@ -149,6 +160,8 @@ export function createPnlContext({ symbol }) {
         longPosition.avgPrice = longPosition.qty > 0 ? totalCost / longPosition.qty : 0;
 
         tradeCount += 1;
+        if (mode === 'LIVE') liveStats.tradeCount += 1;
+
         trades.push({
           ts: Date.now(),
           type: "OPEN",
@@ -166,6 +179,8 @@ export function createPnlContext({ symbol }) {
         shortPosition.avgPrice = shortPosition.qty > 0 ? totalCost / shortPosition.qty : 0;
 
         tradeCount += 1;
+        if (mode === 'LIVE') liveStats.tradeCount += 1;
+
         trades.push({
           ts: Date.now(),
           type: "OPEN",
@@ -196,6 +211,11 @@ export function createPnlContext({ symbol }) {
         realizedPnl += pnl;
         longStats.realizedPnl += pnl;
         longStats.tradeCount += 1;
+
+        if (mode === 'LIVE') {
+          liveStats.realizedPnl += pnl;
+          liveStats.tradeCount += 1;
+        }
 
         longPosition.qty -= closeQty;
         if (longPosition.qty <= 0) {
@@ -230,6 +250,11 @@ export function createPnlContext({ symbol }) {
         shortStats.realizedPnl += pnl;
         shortStats.tradeCount += 1;
 
+        if (mode === 'LIVE') {
+          liveStats.realizedPnl += pnl;
+          liveStats.tradeCount += 1;
+        }
+
         shortPosition.qty -= closeQty;
         if (shortPosition.qty <= 0) {
           shortPosition.qty = 0;
@@ -262,6 +287,7 @@ export function createPnlContext({ symbol }) {
         tradeCount,
         longStats,
         shortStats,
+        liveStats,
         trades
       };
     },
@@ -294,6 +320,7 @@ export function createPnlContext({ symbol }) {
 
       longStats = state.longStats || { realizedPnl: 0, tradeCount: 0 };
       shortStats = state.shortStats || { realizedPnl: 0, tradeCount: 0 };
+      liveStats = state.liveStats || { realizedPnl: 0, tradeCount: 0 };
 
       if (state.trades && Array.isArray(state.trades)) {
         trades.length = 0;
@@ -313,6 +340,7 @@ export function createPnlContext({ symbol }) {
       // Reset split stats
       longStats = { realizedPnl: 0, tradeCount: 0 };
       shortStats = { realizedPnl: 0, tradeCount: 0 };
+      liveStats = { realizedPnl: 0, tradeCount: 0 };
 
       trades.length = 0;
       lastPrice = null;

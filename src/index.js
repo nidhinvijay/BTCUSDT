@@ -1,4 +1,5 @@
 // src/index.js
+
 import './config/env.js';
 import { config } from './config/env.js';
 import { logger } from './utils/logger.js';
@@ -6,6 +7,8 @@ import { startTradingViewServer } from './signals/tradingviewServer.js';
 import { createSignalBus } from './signals/signalBus.js';
 import { createFSM } from './trading/fsm.js';
 import { createPaperBroker } from './trading/paperBroker.js';
+import { createSmartBroker } from './trading/smartBroker.js';
+import { createLiveBroker } from './trading/liveBroker.js';
 import { createPnlContext } from './trading/pnlContext.js';
 import { startMarketStream } from './exchange/marketStream.js';
 import { SessionManager } from './state/sessionState.js';
@@ -67,13 +70,15 @@ async function main() {
 
     const signalBus = createSignalBus();
     const pnlContext = createPnlContext({ symbol });
-    const broker = createPaperBroker({ symbol, pnlContext, logger });
+    const paperBroker = createPaperBroker({ symbol, pnlContext, logger });
+    const liveBroker = createLiveBroker({ symbol, logger });
+    const smartBroker = createSmartBroker({ paperBroker, liveBroker, pnlContext, logger });
 
     // 2. Initialize FSM
     const fsm = createFSM({
       symbol,
       signalBus,
-      broker,
+      broker: smartBroker,
       pnlContext,
       logger
     });
@@ -141,6 +146,7 @@ async function main() {
       if (!tick || typeof tick.ltp !== 'number') return;
       if (source !== priceFeed.active) return;
       pnlContext.updateMarkPrice(tick.ltp);
+      smartBroker.onTick();
       fsm.onTick({ ltp: tick.ltp, ts: tick.ts || Date.now() });
     };
 

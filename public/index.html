@@ -521,28 +521,44 @@
       }
       document.getElementById('perfTitle').innerText = perfTitleText;
 
-      if (isLong) {
-        document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' ' + currency;
-        document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
-        document.getElementById('strategyTrades').innerText = longTrades;
+      if (currentMode === 'LIVE') {
+        // In LIVE mode, show Live Stats
+        const livePnl = data.pnl.liveStats ? data.pnl.liveStats.realizedPnl : 0;
+        const liveTrades = data.pnl.liveStats ? data.pnl.liveStats.tradeCount : 0;
         
-        // Session PnL = Realized (Long) + Unrealized (Long)
-        const sessionPnl = longPnl + unrealized;
-        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
-        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+        document.getElementById('strategyPnl').innerText = '-'; // Strategy split not available for Live yet
+        document.getElementById('strategyTrades').innerText = '-';
+        
+        document.getElementById('totalPnl').innerText = livePnl.toFixed(2) + ' ' + currency;
+        document.getElementById('totalPnl').style.color = livePnl >= 0 ? '#3fb950' : '#f85149';
+        
+        document.getElementById('tradeCount').innerText = liveTrades;
+        document.getElementById('winRate').innerText = '-'; // Win rate not calculated for Live yet
       } else {
-        document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' ' + currency;
-        document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
-        document.getElementById('strategyTrades').innerText = shortTrades;
+        // In PAPER mode, show existing logic
+        if (isLong) {
+          document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' ' + currency;
+          document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
+          document.getElementById('strategyTrades').innerText = longTrades;
+          
+          // Session PnL = Realized (Long) + Unrealized (Long)
+          const sessionPnl = longPnl + unrealized;
+          document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
+          document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+        } else {
+          document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' ' + currency;
+          document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
+          document.getElementById('strategyTrades').innerText = shortTrades;
 
-        // Session PnL = Realized (Short) + Unrealized (Short)
-        const sessionPnl = shortPnl + unrealized;
-        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
-        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+          // Session PnL = Realized (Short) + Unrealized (Short)
+          const sessionPnl = shortPnl + unrealized;
+          document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
+          document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+        }
+        
+        document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
+        document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
       }
-      
-      document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
-      document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
 
       // 5. Tables
       updateTables(data);
@@ -584,7 +600,11 @@
       const sbody = document.querySelector('#signalsTable tbody');
       sbody.innerHTML = '';
       const allSignals = (data.signalHistory || []); // Newest first usually
-      const filteredSignals = allSignals.filter(s => s.side === targetSide);
+      const filteredSignals = allSignals.filter(s => {
+        if (s.side !== targetSide) return false;
+        if (currentMode === 'LIVE' && !s.isLive) return false;
+        return true;
+      });
       
       filteredSignals.forEach(s => {
         const row = `<tr>

@@ -253,10 +253,12 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     // 2. Start fresh for the new signal
     buySignalFirstTickPending = true;
     // Track signal in history
+    const isLive = typeof broker.isLive === 'function' ? broker.isLive() : false;
     signalHistory.unshift({
       ts: Date.now(),
       side: "BUY",
       state: buyState,
+      isLive
     });
     transitionTo("BUY", STATES.BUYSIGNAL);
   }
@@ -276,10 +278,12 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     // 2. Start fresh for the new signal
     sellSignalFirstTickPending = true;
     // Track signal in history
+    const isLive = typeof broker.isLive === 'function' ? broker.isLive() : false;
     signalHistory.unshift({
       ts: Date.now(),
       side: "SELL",
       state: sellState,
+      isLive
     });
     transitionTo("SELL", STATES.SELLSIGNAL);
   }

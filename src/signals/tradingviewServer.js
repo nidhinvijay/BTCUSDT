@@ -398,6 +398,7 @@ export function startTradingViewServer({ activeBots, logger }) {
       const isLong = currentStrategy === 'LONG';
       
       const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => currentSymbol.includes(s));
+      const currency = isIndian ? 'INR' : 'USDT';
       
       // 1. FSM State
       const state = isLong ? data.buyState : data.sellState;
@@ -516,32 +517,32 @@ export function startTradingViewServer({ activeBots, logger }) {
       document.getElementById('perfTitle').innerText = perfTitleText;
 
       if (isLong) {
-        document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' USDT';
+        document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' ' + currency;
         document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
         document.getElementById('strategyTrades').innerText = longTrades;
         
         // Session PnL = Realized (Long) + Unrealized (Long)
         const sessionPnl = longPnl + unrealized;
-        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' USDT';
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
         document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
 
         // Lifetime PnL (Long)
         const lifeLong = data.pnl.lifetimeLongPnl || 0;
-        document.getElementById('lifetimePnl').innerText = lifeLong.toFixed(2) + ' USDT';
+        document.getElementById('lifetimePnl').innerText = lifeLong.toFixed(2) + ' ' + currency;
         document.getElementById('lifetimePnl').style.color = lifeLong >= 0 ? '#3fb950' : '#f85149';
       } else {
-        document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' USDT';
+        document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' ' + currency;
         document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
         document.getElementById('strategyTrades').innerText = shortTrades;
 
         // Session PnL = Realized (Short) + Unrealized (Short)
         const sessionPnl = shortPnl + unrealized;
-        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' USDT';
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
         document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
 
         // Lifetime PnL (Short)
         const lifeShort = data.pnl.lifetimeShortPnl || 0;
-        document.getElementById('lifetimePnl').innerText = lifeShort.toFixed(2) + ' USDT';
+        document.getElementById('lifetimePnl').innerText = lifeShort.toFixed(2) + ' ' + currency;
         document.getElementById('lifetimePnl').style.color = lifeShort >= 0 ? '#3fb950' : '#f85149';
       }
       

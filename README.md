@@ -41,6 +41,7 @@ A robust paper trading engine designed for both Crypto (Binance) and Indian Indi
    FYERS_APP_ID=your_app_id
    FYERS_SECRET_KEY=your_secret_key
    FYERS_REDIRECT_URI=http://localhost:3000/fyers/callback
+   FYERS_WS_LOG_PATH=./fyers-logs    # optional websocket log directory
    ```
 
 ## Usage
@@ -96,6 +97,13 @@ A setup script is provided for Ubuntu/Debian VMs (e.g., GCP, AWS, DigitalOcean).
 - **`src/exchange/`**: Market data adapters (Binance WebSocket, Fyers WebSocket).
 - **`src/signals/tradingviewServer.js`**: Express server handling webhooks and serving the dashboard.
 - **`src/brokers/fyersAuth.js`**: Fyers OAuth v3 implementation.
+
+### FYERS Live Data (WS)
+
+- We now mirror the working `part3Final` setup by streaming Indian indices directly from FYERS' official websocket SDK (`fyers-api-v3`).
+- Install the dependency after pulling changes: `npm install fyers-api-v3`.
+- `npm run auth` still stores the raw access token; the websocket client automatically builds the `${FYERS_APP_ID}:${access_token}` string.
+- Optional logs from the SDK are written to `FYERS_WS_LOG_PATH` (defaults to `data/fyers-logs`).
 
 ## Webhook Format
 

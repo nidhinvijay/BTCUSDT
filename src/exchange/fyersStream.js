@@ -1,68 +1,38 @@
 // src/exchange/fyersStream.js
-// Fyers WebSocket wrapper for market data streaming
-import { isMarketOpen, getMarketStatus } from '../utils/marketHours.js';
+import { ensureFyersHub, subscribeToSymbol } from './fyersDataHub.js';
 
-export function startFyersStream({ symbol, accessToken, appId, onTick, logger }) {
-  // Note: Fyers WebSocket requires their Python/Node SDK
-  // For now, we'll use polling as a fallback
+const FYERS_SYMBOL_MAP = {
+  NIFTY: 'NSE:NIFTY50-INDEX',
+  BANKNIFTY: 'NSE:NIFTYBANK-INDEX',
+  SENSEX: 'BSE:SENSEX-INDEX',
+  FINNIFTY: 'NSE:FINNIFTY-INDEX',
+};
 
-  let intervalId = null;
+export async function startFyersStream({
+  symbol,
+  accessToken,
+  appId,
+  onTick,
+  logger,
+}) {
+  await ensureFyersHub({ appId, accessToken, logger });
 
-  const pollPrice = async () => {
-    try {
-      // Check if market is open
-      if (!isMarketOpen(symbol)) {
-        const status = getMarketStatus(symbol);
-        logger.info({ symbol, status: status.message }, 'Skipping Fyers poll - market closed');
-        return;
-      }
+  const fyersSymbol = FYERS_SYMBOL_MAP[symbol] || symbol;
 
-      // Import dynamically to avoid circular deps
-      const { FyersMarketData } = await import('../brokers/fyersMarketData.js');
-      const marketData = new FyersMarketData({ appId, accessToken, logger });
+  const unsubscribe = subscribeToSymbol(fyersSymbol, (tick) => {
+    onTick({
+      symbol,
+      ltp: tick.ltp,
+      ts: tick.ts,
+    });
+  });
 
-      // Map symbol to Fyers format (v3)
-      let fyersSymbol;
-      if (symbol === 'NIFTY') {
-        fyersSymbol = 'NSE:NIFTY50';  // Updated for v3
-      } else if (symbol === 'BANKNIFTY') {
-        fyersSymbol = 'NSE:BANKNIFTY';  // Updated for v3
-      } else if (symbol === 'SENSEX') {
-        fyersSymbol = 'BSE:SENSEX';  // Updated for v3
-      } else {
-        fyersSymbol = symbol;
-      }
-
-      const quotes = await marketData.getQuotes([fyersSymbol]);
-
-      if (quotes && quotes[fyersSymbol]) {
-        const quote = quotes[fyersSymbol].v;
-        onTick({
-          symbol,
-          ltp: quote.lp || quote.close_price,
-          volume: quote.volume,
-          timestamp: Date.now(),
-        });
-      }
-    } catch (error) {
-      logger.error({ error: error.message, symbol }, 'Fyers polling error');
-    }
-  };
-
-  // Poll every 1 second
-  intervalId = setInterval(pollPrice, 1000);
-
-  // Initial fetch
-  pollPrice();
-
-  logger.info({ symbol }, 'Started Fyers price polling');
+  logger.info({ symbol, fyersSymbol }, 'Subscribed to FYERS websocket stream');
 
   return {
     close: () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        logger.info({ symbol }, 'Stopped Fyers price polling');
-      }
-    }
+      unsubscribe();
+      logger.info({ symbol, fyersSymbol }, 'Unsubscribed from FYERS websocket stream');
+    },
   };
 }

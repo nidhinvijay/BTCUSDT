@@ -709,14 +709,18 @@ export function startTradingViewServer({ activeBots, logger }) {
     const message = req.body;
 
     // Parse message
-    const { side } = parseTradingViewMessage(message);
+    const { side: parsedSide } = parseTradingViewMessage(message);
+    let side = parsedSide;
 
     let symbol = config.defaultSymbol;
     let signalInstrument = null;
+    let optionType = null;
     const match = message.match(/sym=([A-Z0-9]+)/i);
     if (match && match[1]) {
       const extracted = match[1].toUpperCase();
       signalInstrument = extracted;
+      const typeMatch = /(CE|PE)$/i.exec(extracted);
+      optionType = typeMatch ? typeMatch[1].toUpperCase() : null;
 
       if (activeBots.has(extracted)) {
         symbol = extracted;
@@ -740,6 +744,10 @@ export function startTradingViewServer({ activeBots, logger }) {
     if (!bot) {
       logger.error({ symbol }, "Received signal for unknown symbol");
       return res.status(400).json({ error: "Unknown symbol" });
+    }
+
+    if (optionType) {
+      side = optionType === 'PE' ? 'SELL' : 'BUY';
     }
 
     if (!side) {

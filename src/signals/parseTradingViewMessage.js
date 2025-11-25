@@ -4,7 +4,7 @@
 // "Accepted Entry + priorRisePct= 0.00 | stopPx=100 | sym=BTCUSDT"
 // "Accepted Exit + priorRisePct= 0.00 | stopPx=100 | sym=BTCUSDT"
 export function parseTradingViewMessage(message) {
-  if (typeof message !== 'string') return { side: null };
+  if (typeof message !== 'string') return { side: null, action: null };
 
   const trimmed = message.trim();
   const isEntry = /Accepted\s+Entry/i.test(trimmed);
@@ -15,5 +15,7 @@ export function parseTradingViewMessage(message) {
     isExit ? 'SELL' :
     null;
 
-  return { side };
+  const action = isEntry ? 'ENTRY' : isExit ? 'EXIT' : null;
+
+  return { side, action };
 }

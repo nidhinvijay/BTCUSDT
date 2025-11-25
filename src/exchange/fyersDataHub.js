@@ -43,17 +43,16 @@ export async function ensureFyersHub({ appId, accessToken, logger }) {
 }
 
 export function subscribeToSymbol(symbol, listener) {
+  if (!symbol) return () => {};
   if (!listeners.has(symbol)) {
     listeners.set(symbol, new Set());
   }
   listeners.get(symbol).add(listener);
   subscribeSymbols([symbol]);
-
   const cached = lastTicks.get(symbol);
   if (cached) {
     listener(cached);
   }
-
   return () => {
     const symbolListeners = listeners.get(symbol);
     if (!symbolListeners) return;
@@ -62,4 +61,8 @@ export function subscribeToSymbol(symbol, listener) {
       listeners.delete(symbol);
     }
   };
+}
+
+export function getLastTick(symbol) {
+  return lastTicks.get(symbol) || null;
 }

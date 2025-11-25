@@ -8,6 +8,25 @@ import { config } from '../config/env.js';
 
 let wssInstance = null;
 
+function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
+  if (!rawSymbol) return null;
+  const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'];
+  if (!allowed.includes(baseSymbol)) return null;
+  const cleaned = rawSymbol.toUpperCase();
+  if (cleaned === baseSymbol) return null;
+  if (cleaned.includes(':')) {
+    return { display: cleaned.split(':').pop(), fyersSymbol: cleaned };
+  }
+  const prefix =
+    baseSymbol === 'SENSEX'
+      ? 'BSE'
+      : baseSymbol === 'BTCUSDT'
+      ? ''
+      : 'NSE';
+  const fyersSymbol = prefix ? `${prefix}:${cleaned}` : cleaned;
+  return { display: cleaned, fyersSymbol };
+}
+
 export function setWss(wss) {
   wssInstance = wss;
 }
@@ -39,7 +58,7 @@ export function startTradingViewServer({ activeBots, logger }) {
       --danger-color: #da3633;
       --warning-color: #d29922;
       --border-color: #30363d;
-    }
+  }
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: var(--bg-color);
@@ -253,7 +272,8 @@ export function startTradingViewServer({ activeBots, logger }) {
         <h3 id="posTitle">ACTIVE POSITION</h3>
         <div class="stat-row"><span>Size:</span> <span id="posSize" class="stat-value">None</span></div>
         <div class="stat-row"><span>Entry Price:</span> <span id="posEntry" class="stat-value">-</span></div>
-        <div class="stat-row"><span>Current Price:</span> <span id="lastPrice" class="stat-value">-</span></div>
+      <div class="stat-row"><span>Current Price:</span> <span id="lastPrice" class="stat-value">-</span></div>
+      <div class="stat-row"><span>Instrument:</span> <span id="signalSymbolName" class="stat-value">-</span></div>
         <div class="stat-row"><span>Unrealized PnL:</span> <span id="unrealizedPnl" class="stat-value">0.00</span></div>
       </div>
 
@@ -487,7 +507,17 @@ export function startTradingViewServer({ activeBots, logger }) {
       document.getElementById('posTitle').innerText = posTitleText;
       document.getElementById('posSize').innerText = pos ? pos.qty : 'None';
       document.getElementById('posEntry').innerText = pos ? pos.entryPrice.toFixed(2) : '-';
-      document.getElementById('lastPrice').innerText = data.pnl.lastPrice || '-';
+      const signalSymbol = data.signalSymbol;
+      const displayPrice = signalSymbol?.ltp ?? data.pnl.lastPrice;
+      document.getElementById('lastPrice').innerText =
+        typeof displayPrice === 'number'
+          ? displayPrice.toFixed(2)
+          : displayPrice ?? '-';
+      const signalNameEl = document.getElementById('signalSymbolName');
+      const symbolLabel =
+        signalSymbol?.symbol ??
+        (isIndian ? currentSymbol + ' (index)' : currentSymbol);
+      signalNameEl.innerText = symbolLabel;
       
       // Calculate Unrealized PnL for specific side
       // Note: pnl.unrealizedPnl is total. We need specific side PnL.
@@ -627,18 +657,16 @@ export function startTradingViewServer({ activeBots, logger }) {
     // Parse message
     const { side } = parseTradingViewMessage(message);
 
-    // Determine Symbol (Default to BTCUSDT if not found)
-    // We look for "sym=BTCUSDT" in the message string
     let symbol = config.defaultSymbol;
+    let signalInstrument = null;
     const match = message.match(/sym=([A-Z0-9]+)/i);
     if (match && match[1]) {
       const extracted = match[1].toUpperCase();
+      signalInstrument = extracted;
 
-      // Check for exact match first
       if (activeBots.has(extracted)) {
         symbol = extracted;
       } else {
-        // Check for partial match (e.g. NIFTY251125P26250 starts with NIFTY)
         for (const key of activeBots.keys()) {
           if (extracted.startsWith(key)) {
             symbol = key;
@@ -649,6 +677,11 @@ export function startTradingViewServer({ activeBots, logger }) {
     }
 
     const bot = activeBots.get(symbol);
+
+    if (bot && typeof bot.setInstrument === 'function') {
+      const instrumentInfo = normalizeInstrumentSymbol(symbol, signalInstrument);
+      bot.setInstrument(instrumentInfo);
+    }
 
     if (!bot) {
       logger.error({ symbol }, "Received signal for unknown symbol");

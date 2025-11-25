@@ -16,6 +16,7 @@ import http from 'http';
 import { startScheduler } from './utils/scheduler.js';
 import { FyersAuth } from './brokers/fyersAuth.js';
 import { startFyersStream } from './exchange/fyersStream.js';
+import { subscribeToSymbol, getLastTick } from './exchange/fyersDataHub.js';
 import { setWss } from './signals/tradingviewServer.js';
 
 async function main() {
@@ -113,18 +114,68 @@ async function main() {
     // 5. Market stream (conditional: Binance or Fyers)
     const exchange = config.exchangeMapping[symbol] || 'binance';
 
+    let signalSymbolState = {
+      display: null,
+      fyersSymbol: null,
+      ltp: null,
+      unsubscribe: null,
+    };
+    let setInstrument = () => {};
+
     if (exchange === 'fyers') {
       // Fyers stream for Indian indices
       if (fyersAccessToken) {
         logger.info(`[${symbol}] Using Fyers market data`);
+
+        const priceFeed = {
+          active: 'base',
+        };
+
+        const feedPriceTick = (source, tick) => {
+          if (!tick || typeof tick.ltp !== 'number') return;
+          if (source !== priceFeed.active) return;
+          pnlContext.updateMarkPrice(tick.ltp);
+          fsm.onTick({ ltp: tick.ltp, ts: tick.ts || Date.now() });
+        };
+
+        setInstrument = (instrumentInfo) => {
+          if (signalSymbolState.unsubscribe) {
+            signalSymbolState.unsubscribe();
+            signalSymbolState.unsubscribe = null;
+          }
+          if (!instrumentInfo || !instrumentInfo.fyersSymbol) {
+            signalSymbolState.display = null;
+            signalSymbolState.fyersSymbol = null;
+            signalSymbolState.ltp = null;
+            priceFeed.active = 'base';
+            return;
+          }
+
+          signalSymbolState.display = instrumentInfo.display || instrumentInfo.fyersSymbol;
+          signalSymbolState.fyersSymbol = instrumentInfo.fyersSymbol;
+          signalSymbolState.ltp = null;
+          priceFeed.active = 'option';
+
+          signalSymbolState.unsubscribe = subscribeToSymbol(
+            instrumentInfo.fyersSymbol,
+            (tick) => {
+              signalSymbolState.ltp = tick.ltp;
+              feedPriceTick('option', tick);
+            }
+          );
+
+          const cached = getLastTick(instrumentInfo.fyersSymbol);
+          if (cached) {
+            signalSymbolState.ltp = cached.ltp;
+            feedPriceTick('option', cached);
+          }
+        };
+
         startFyersStream({
           symbol,
           accessToken: fyersAccessToken,
           appId: config.fyers.appId,
-          onTick: (tick) => {
-            pnlContext.updateMarkPrice(tick.ltp);
-            fsm.onTick(tick);
-          },
+          onTick: (tick) => feedPriceTick('base', tick),
           logger
         });
       } else {
@@ -142,10 +193,25 @@ async function main() {
         },
         logger
       });
+
+      signalSymbolState = {
+        display: null,
+        fyersSymbol: null,
+        ltp: null,
+        unsubscribe: null,
+      };
+      setInstrument = () => {};
     }
 
     // Store in Map
-    activeBots.set(symbol, { fsm, signalBus, pnlContext, sessionManager });
+    activeBots.set(symbol, {
+      fsm,
+      signalBus,
+      pnlContext,
+      sessionManager,
+      signalSymbolState,
+      setInstrument,
+    });
   }
 
   // 6. Start Scheduler (5:30 AM Reset)
@@ -171,10 +237,19 @@ async function main() {
     // Send initial state for ALL symbols
     const fullState = {};
     activeBots.forEach((bot, symbol) => {
+      const state = bot.signalSymbolState;
+      const signalState = state?.fyersSymbol
+        ? {
+            symbol: state.display,
+            fyersSymbol: state.fyersSymbol,
+            ltp: state.ltp,
+          }
+        : null;
       fullState[symbol] = {
         buyState: bot.fsm.getBuyState(),
         sellState: bot.fsm.getSellState(),
         pnl: bot.pnlContext.getSnapshot(),
+        signalSymbol: signalState,
         // Add other needed data
       };
     });
@@ -184,6 +259,14 @@ async function main() {
     const interval = setInterval(() => {
       const updates = {};
       activeBots.forEach((bot, symbol) => {
+        const state = bot.signalSymbolState;
+        const signalState = state?.fyersSymbol
+          ? {
+              symbol: state.display,
+              fyersSymbol: state.fyersSymbol,
+              ltp: state.ltp,
+            }
+          : null;
         updates[symbol] = {
           buyState: bot.fsm.getBuyState(),
           sellState: bot.fsm.getSellState(),
@@ -192,6 +275,7 @@ async function main() {
           signalHistory: bot.fsm.getSignalHistory(),
           longPosition: bot.fsm.getLongPosition(),
           shortPosition: bot.fsm.getShortPosition(),
+          signalSymbol: signalState,
           ...bot.fsm.getState() // Include all FSM state data (timestamps, etc.)
         };
       });

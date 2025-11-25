@@ -79,6 +79,21 @@ async function main() {
     });
 
     // 3. Resume State
+    let signalSymbolState = {
+      buy: {
+        display: null,
+        fyersSymbol: null,
+        ltp: null,
+        unsubscribe: null,
+      },
+      sell: {
+        display: null,
+        fyersSymbol: null,
+        ltp: null,
+        unsubscribe: null,
+      }
+    };
+
     if (resumeState(fsm, sessionManager, pnlContext, symbol)) {
       logger.info(`[${symbol}] State resumed successfully.`);
     } else {
@@ -91,6 +106,10 @@ async function main() {
         fsm: fsm.getState(),
         session: sessionManager.getState(),
         pnl: pnlContext.getState(),
+        signalSymbolState: {
+          buy: { display: signalSymbolState.buy.display, fyersSymbol: signalSymbolState.buy.fyersSymbol },
+          sell: { display: signalSymbolState.sell.display, fyersSymbol: signalSymbolState.sell.fyersSymbol }
+        },
         timestamp: Date.now()
       };
       upsertMachineState(symbol, stateToSave);
@@ -114,68 +133,74 @@ async function main() {
     // 5. Market stream (conditional: Binance or Fyers)
     const exchange = config.exchangeMapping[symbol] || 'binance';
 
-    let signalSymbolState = {
-      display: null,
-      fyersSymbol: null,
-      ltp: null,
-      unsubscribe: null,
+    const priceFeed = {
+      active: 'base',
     };
-    let setInstrument = () => {};
+
+    const feedPriceTick = (source, tick) => {
+      if (!tick || typeof tick.ltp !== 'number') return;
+      if (source !== priceFeed.active) return;
+      pnlContext.updateMarkPrice(tick.ltp);
+      fsm.onTick({ ltp: tick.ltp, ts: tick.ts || Date.now() });
+    };
+
+    const detachInstrument = (side) => {
+      if (signalSymbolState[side].unsubscribe) {
+        signalSymbolState[side].unsubscribe();
+        signalSymbolState[side].unsubscribe = null;
+      }
+      signalSymbolState[side].display = null;
+      signalSymbolState[side].fyersSymbol = null;
+      signalSymbolState[side].ltp = null;
+    };
+
+    const subscribeInstrument = (side, info) => {
+      detachInstrument(side);
+      if (!info || !info.fyersSymbol) return;
+
+      signalSymbolState[side].display = info.display || info.fyersSymbol;
+      signalSymbolState[side].fyersSymbol = info.fyersSymbol;
+      signalSymbolState[side].ltp = null;
+
+      signalSymbolState[side].unsubscribe = subscribeToSymbol(info.fyersSymbol, (tick) => {
+        signalSymbolState[side].ltp = tick.ltp;
+        feedPriceTick(side, tick);
+      });
+
+      const cached = getLastTick(info.fyersSymbol);
+      if (cached) {
+        signalSymbolState[side].ltp = cached.ltp;
+        feedPriceTick(side, cached);
+      }
+    };
+
+    let setInstrument = (info) => {
+      if (!info || !info.fyersSymbol) {
+        detachInstrument('buy');
+        detachInstrument('sell');
+        priceFeed.active = 'base';
+        return;
+      }
+
+      const intendedSide = info.optionType === 'PUT' ? 'sell' : 'buy';
+      subscribeInstrument(intendedSide, info);
+      priceFeed.active = intendedSide;
+    };
 
     if (exchange === 'fyers') {
       // Fyers stream for Indian indices
       if (fyersAccessToken) {
         logger.info(`[${symbol}] Using Fyers market data`);
 
-        const priceFeed = {
-          active: 'base',
-        };
-
-        const feedPriceTick = (source, tick) => {
-          if (!tick || typeof tick.ltp !== 'number') return;
-          if (source !== priceFeed.active) return;
-          pnlContext.updateMarkPrice(tick.ltp);
-          fsm.onTick({ ltp: tick.ltp, ts: tick.ts || Date.now() });
-        };
-
-        setInstrument = (instrumentInfo) => {
-          if (signalSymbolState.unsubscribe) {
-            signalSymbolState.unsubscribe();
-            signalSymbolState.unsubscribe = null;
-          }
-          if (!instrumentInfo || !instrumentInfo.fyersSymbol) {
-            signalSymbolState.display = null;
-            signalSymbolState.fyersSymbol = null;
-            signalSymbolState.ltp = null;
-            priceFeed.active = 'base';
-            return;
-          }
-
-          signalSymbolState.display = instrumentInfo.display || instrumentInfo.fyersSymbol;
-          signalSymbolState.fyersSymbol = instrumentInfo.fyersSymbol;
-          signalSymbolState.ltp = null;
-          priceFeed.active = 'option';
-
-          signalSymbolState.unsubscribe = subscribeToSymbol(
-            instrumentInfo.fyersSymbol,
-            (tick) => {
-              signalSymbolState.ltp = tick.ltp;
-              feedPriceTick('option', tick);
-            }
-          );
-
-          const cached = getLastTick(instrumentInfo.fyersSymbol);
-          if (cached) {
-            signalSymbolState.ltp = cached.ltp;
-            feedPriceTick('option', cached);
-          }
-        };
-
         startFyersStream({
           symbol,
           accessToken: fyersAccessToken,
           appId: config.fyers.appId,
-          onTick: (tick) => feedPriceTick('base', tick),
+          onTick: (tick) => {
+            if (priceFeed.active === 'base') {
+              feedPriceTick('base', tick);
+            }
+          },
           logger
         });
       } else {
@@ -194,12 +219,6 @@ async function main() {
         logger
       });
 
-      signalSymbolState = {
-        display: null,
-        fyersSymbol: null,
-        ltp: null,
-        unsubscribe: null,
-      };
       setInstrument = () => {};
     }
 
@@ -237,20 +256,27 @@ async function main() {
     // Send initial state for ALL symbols
     const fullState = {};
     activeBots.forEach((bot, symbol) => {
-      const state = bot.signalSymbolState;
-      const signalState = state?.fyersSymbol
+      const buyState = bot.signalSymbolState?.buy?.fyersSymbol
         ? {
-            symbol: state.display,
-            fyersSymbol: state.fyersSymbol,
-            ltp: state.ltp,
+            symbol: bot.signalSymbolState.buy.display,
+            fyersSymbol: bot.signalSymbolState.buy.fyersSymbol,
+            ltp: bot.signalSymbolState.buy.ltp,
+          }
+        : null;
+      const sellState = bot.signalSymbolState?.sell?.fyersSymbol
+        ? {
+            symbol: bot.signalSymbolState.sell.display,
+            fyersSymbol: bot.signalSymbolState.sell.fyersSymbol,
+            ltp: bot.signalSymbolState.sell.ltp,
           }
         : null;
       fullState[symbol] = {
         buyState: bot.fsm.getBuyState(),
         sellState: bot.fsm.getSellState(),
         pnl: bot.pnlContext.getSnapshot(),
-        signalSymbol: signalState,
         // Add other needed data
+        signalSymbolBuy: buyState,
+        signalSymbolSell: sellState,
       };
     });
     ws.send(JSON.stringify({ type: 'INIT', data: fullState }));
@@ -259,12 +285,18 @@ async function main() {
     const interval = setInterval(() => {
       const updates = {};
       activeBots.forEach((bot, symbol) => {
-        const state = bot.signalSymbolState;
-        const signalState = state?.fyersSymbol
+        const buyState = bot.signalSymbolState?.buy?.fyersSymbol
           ? {
-              symbol: state.display,
-              fyersSymbol: state.fyersSymbol,
-              ltp: state.ltp,
+              symbol: bot.signalSymbolState.buy.display,
+              fyersSymbol: bot.signalSymbolState.buy.fyersSymbol,
+              ltp: bot.signalSymbolState.buy.ltp,
+            }
+          : null;
+        const sellState = bot.signalSymbolState?.sell?.fyersSymbol
+          ? {
+              symbol: bot.signalSymbolState.sell.display,
+              fyersSymbol: bot.signalSymbolState.sell.fyersSymbol,
+              ltp: bot.signalSymbolState.sell.ltp,
             }
           : null;
         updates[symbol] = {
@@ -275,7 +307,8 @@ async function main() {
           signalHistory: bot.fsm.getSignalHistory(),
           longPosition: bot.fsm.getLongPosition(),
           shortPosition: bot.fsm.getShortPosition(),
-          signalSymbol: signalState,
+          signalSymbolBuy: buyState,
+          signalSymbolSell: sellState,
           ...bot.fsm.getState() // Include all FSM state data (timestamps, etc.)
         };
       });

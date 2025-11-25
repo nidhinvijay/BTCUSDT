@@ -10,34 +10,40 @@ let wssInstance = null;
 
 function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
   if (!rawSymbol) return null;
-const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'];
-const cleaned = rawSymbol.toUpperCase();
-if (cleaned === baseSymbol) return null;
+  const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'];
+  const cleaned = rawSymbol.toUpperCase();
+  if (cleaned === baseSymbol) return null;
+
   if (!allowed.includes(baseSymbol)) {
     const fyersSymbol = cleaned.includes(':') ? cleaned : `NSE:${cleaned}`;
     const display = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
-    return { display, fyersSymbol };
+    return { display, fyersSymbol, optionType: null };
   }
 
-const mapped = mapIndianOptionToFyers(cleaned);
-if (mapped) {
-  const display = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
-  return { display, fyersSymbol: mapped };
+  const mapped = mapIndianOptionSymbol(cleaned);
+  if (mapped) {
+    const display = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
+    return { display, fyersSymbol: mapped.fyersSymbol, optionType: mapped.optionType };
+  }
+
+  const fallback = cleaned.includes(':') ? cleaned : `NSE:${cleaned}`;
+  const fallbackDisplay = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
+  return { display: fallbackDisplay, fyersSymbol: fallback, optionType: null };
 }
 
-const fallback = cleaned.includes(':') ? cleaned : `NSE:${cleaned}`;
-const fallbackDisplay = cleaned.includes(':') ? cleaned.split(':').pop() : cleaned;
-return { display: fallbackDisplay, fyersSymbol: fallback };
-}
-
-function mapIndianOptionToFyers(symbol) {
-  const match = /^(NIFTY|FINNIFTY|BANKNIFTY|SENSEX)(\d{2})(\d{2})(\d{2})([CP])(\d+)$/.exec(symbol);
+function mapIndianOptionSymbol(symbol) {
+  const raw = symbol.startsWith('NSE:') ? symbol.slice(4) : symbol;
+  const match = /^(NIFTY|FINNIFTY|BANKNIFTY|SENSEX)(\d{2})(\d{2})(\d{2})([CP])(\d+)$/.exec(raw);
   if (!match) {
-    return symbol.includes(':') ? symbol : `NSE:${symbol}`;
+    const fyersSymbol = symbol.includes(':') ? symbol : `NSE:${symbol}`;
+    const suffixMatch = /(CE|PE|C|P)$/i.exec(raw);
+    const optionType = suffixMatch ? (suffixMatch[1].startsWith('P') ? 'PUT' : 'CALL') : null;
+    return { fyersSymbol, optionType };
   }
 
   const [, root, yy, mm, dd, cp, strike] = match;
   const cepe = cp === 'C' ? 'CE' : 'PE';
+  const optionType = cepe === 'CE' ? 'CALL' : 'PUT';
 
   const MONTH_3L = {
     '01': 'JAN',
@@ -72,13 +78,13 @@ function mapIndianOptionToFyers(symbol) {
   if (root === 'NIFTY' || root === 'FINNIFTY') {
     const mon3 = MONTH_3L[mm];
     if (!mon3) return null;
-    return `NSE:${root}${yy}${mon3}${strike}${cepe}`;
+    return { fyersSymbol: `NSE:${root}${yy}${mon3}${strike}${cepe}`, optionType };
   }
 
   const monLetter = MONTH_LETTER[mm];
   if (!monLetter) return null;
   const expiryCode = `${yy}${monLetter}${dd}`;
-  return `NSE:${root}${expiryCode}${strike}${cepe}`;
+  return { fyersSymbol: `NSE:${root}${expiryCode}${strike}${cepe}`, optionType };
 }
 
 export function setWss(wss) {
@@ -561,15 +567,15 @@ export function startTradingViewServer({ activeBots, logger }) {
       document.getElementById('posTitle').innerText = posTitleText;
       document.getElementById('posSize').innerText = pos ? pos.qty : 'None';
       document.getElementById('posEntry').innerText = pos ? pos.entryPrice.toFixed(2) : '-';
-      const signalSymbol = data.signalSymbol;
-      const displayPrice = signalSymbol?.ltp ?? data.pnl.lastPrice;
+      const activeInstrument = isLong ? data.signalSymbolBuy : data.signalSymbolSell;
+      const displayPrice = activeInstrument?.ltp ?? data.pnl.lastPrice;
       document.getElementById('lastPrice').innerText =
         typeof displayPrice === 'number'
           ? displayPrice.toFixed(2)
           : displayPrice ?? '-';
       const signalNameEl = document.getElementById('signalSymbolName');
       const symbolLabel =
-        signalSymbol?.symbol ??
+        activeInstrument?.symbol ??
         (isIndian ? currentSymbol + ' (index)' : currentSymbol);
       signalNameEl.innerText = symbolLabel;
       
@@ -719,8 +725,13 @@ export function startTradingViewServer({ activeBots, logger }) {
     if (match && match[1]) {
       const extracted = match[1].toUpperCase();
       signalInstrument = extracted;
-      const typeMatch = /(CE|PE)$/i.exec(extracted);
-      optionType = typeMatch ? typeMatch[1].toUpperCase() : null;
+      const typeMatch = /(CE|PE|C|P)$/i.exec(extracted);
+      if (typeMatch) {
+        const raw = typeMatch[1].toUpperCase();
+        optionType = raw === 'PE' || raw === 'P' ? 'PUT' : 'CALL';
+      } else {
+        optionType = null;
+      }
 
       if (activeBots.has(extracted)) {
         symbol = extracted;
@@ -739,6 +750,9 @@ export function startTradingViewServer({ activeBots, logger }) {
     if (bot && typeof bot.setInstrument === 'function') {
       const instrumentInfo = normalizeInstrumentSymbol(symbol, signalInstrument);
       bot.setInstrument(instrumentInfo);
+      if (instrumentInfo?.optionType) {
+        optionType = instrumentInfo.optionType;
+      }
     }
 
     if (!bot) {
@@ -747,7 +761,10 @@ export function startTradingViewServer({ activeBots, logger }) {
     }
 
     if (optionType) {
-      side = optionType === 'PE' ? 'SELL' : 'BUY';
+      // For index options:
+      // - CALL (C/CE) drives CE (long) strategy  -> BUY
+      // - PUT  (P/PE) drives PE (short) strategy -> SELL
+      side = optionType === 'PUT' ? 'SELL' : 'BUY';
     }
 
     if (!side) {

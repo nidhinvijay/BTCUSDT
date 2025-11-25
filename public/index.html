@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Asset Trader</title>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --text-primary: #c9d1d9;
+      --text-secondary: #8b949e;
+      --accent-color: #58a6ff;
+      --success-color: #238636;
+      --danger-color: #da3633;
+      --warning-color: #d29922;
+      --border-color: #30363d;
+  }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      margin: 0;
+      padding: 6px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .status-badge {
+      background-color: var(--success-color);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.8em;
+      font-weight: bold;
+    }
+    
+    /* Symbol Tabs */
+    .symbol-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+    .symbol-tab {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+    .symbol-tab:hover {
+      background-color: #21262d;
+    }
+    .symbol-tab.active {
+      background-color: var(--accent-color);
+      color: white;
+      border-color: var(--accent-color);
+    }
+
+    /* Strategy Tabs (Buy/Sell) */
+    .strategy-tabs {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 15px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .strategy-tab {
+      padding: 8px 16px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      border-bottom: 2px solid transparent;
+    }
+    .strategy-tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-color);
+      font-weight: bold;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 20px;
+    }
+    .card h3 {
+      margin-top: 0;
+      font-size: 0.9em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .stat-label { color: var(--text-secondary); }
+    .stat-value { font-family: monospace; font-size: 1.1em; }
+    .state-highlight {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: var(--accent-color);
+      margin: 10px 0;
+    }
+    .buy-color { color: #3fb950; }
+    .sell-color { color: #f85149; }
+    
+    .btn {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    .btn-danger { background-color: #da3633; color: white; border: none; }
+    .btn:hover { opacity: 0.9; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border-color); }
+    th { color: var(--text-secondary); }
+    
+    .hidden { display: none; }
+    
+    /* Toast Notification */
+    #toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+    .toast {
+      background-color: var(--card-bg);
+      border: 1px solid var(--accent-color);
+      color: var(--text-primary);
+      padding: 15px 20px;
+      margin-top: 10px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideIn 0.3s ease-out;
+      min-width: 250px;
+    }
+    .toast.buy { border-left: 5px solid #3fb950; }
+    .toast.sell { border-left: 5px solid #f85149; }
+    
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Multi-Asset Trader</h1>
+      <div style="font-size: 0.9em; color: var(--text-secondary);">Dual FSM Engine • Independent Long/Short Logic</div>
+    </div>
+    <div>
+      <div class="status-badge">● Operational</div>
+    </div>
+  </div>
+  
+  <div id="toast-container"></div>
+
+  <!-- Symbol Navigation -->
+  <div class="symbol-tabs" id="symbolTabs">
+    <!-- Generated by JS -->
+  </div>
+
+  <div id="dashboardContent">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <div id="fyersAuthStatus" style="display: none;">
+        <button class="btn" onclick="authenticateFyers()" style="background-color: var(--warning-color);">
+          🔐 Authorize Fyers for Indian Indices
+        </button>
+      </div>
+      <div style="margin-left: auto;">
+        <button class="btn btn-danger" onclick="closePositions()">Close Positions</button>
+        <button class="btn" onclick="resetSystem()">Reset System</button>
+      </div>
+    </div>
+
+    <!-- Strategy Toggle -->
+    <div class="strategy-tabs">
+      <div id="tabLong" class="strategy-tab active" onclick="switchStrategy('LONG')">LONG Strategy (BUY)</div>
+      <div id="tabShort" class="strategy-tab" onclick="switchStrategy('SHORT')">SHORT Strategy (SELL)</div>
+      <div style="margin-left: auto; display: flex; gap: 5px;">
+        <div id="modePaper" class="strategy-tab active" onclick="switchMode('PAPER')">PAPER</div>
+        <div id="modeLive" class="strategy-tab" onclick="switchMode('LIVE')">LIVE</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      
+      <!-- FSM State Card -->
+      <div class="card">
+        <h3 id="fsmTitle">FSM STATE</h3>
+        <div id="fsmStateDisplay" class="state-highlight">WAITING...</div>
+        <div class="stat-row"><span>Entry Trigger:</span> <span id="entryTrigger" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Stop Loss:</span> <span id="stopLoss" class="stat-value">-</span></div>
+        <div id="timerDisplay" style="margin-top: 15px; font-size: 1.3em; font-family: monospace; color: var(--warning-color); font-weight: bold;"></div>
+      </div>
+
+      <!-- Position Card -->
+      <div class="card">
+        <h3 id="posTitle">ACTIVE POSITION</h3>
+        <div class="stat-row"><span>Size:</span> <span id="posSize" class="stat-value">None</span></div>
+        <div class="stat-row"><span>Entry Price:</span> <span id="posEntry" class="stat-value">-</span></div>
+      <div class="stat-row"><span>Current Price:</span> <span id="lastPrice" class="stat-value">-</span></div>
+      <div class="stat-row"><span>Instrument:</span> <span id="signalSymbolName" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Unrealized PnL:</span> <span id="unrealizedPnl" class="stat-value">0.00</span></div>
+      </div>
+
+      <!-- Performance Card -->
+      <div class="card">
+        <h3 id="perfTitle">LONG PERFORMANCE</h3>
+        <div class="stat-row"><span>Strategy PnL:</span> <span id="strategyPnl" class="stat-value">0.00 USDT</span></div>
+        <div class="stat-row"><span>Strategy Trades:</span> <span id="strategyTrades" class="stat-value">0</span></div>
+        <div class="stat-row"><span>Session PnL:</span> <span id="totalPnl" class="stat-value">0.00 USDT</span></div>
+        <div class="stat-row"><span>Total Trades:</span> <span id="tradeCount" class="stat-value">0</span></div>
+        <div class="stat-row"><span>Win Rate:</span> <span id="winRate" class="stat-value">0%</span></div>
+      </div>
+
+    </div>
+
+    <!-- History Tables -->
+    <div class="dashboard-grid" style="margin-top: 20px;">
+      <div class="card">
+        <h3>Recent Trades</h3>
+        <table id="tradesTable">
+          <thead><tr><th>Time</th><th>Type</th><th>Side</th><th>Qty</th><th>Price</th><th>PnL</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Signal History</h3>
+        <table id="signalsTable">
+          <thead><tr><th>Time</th><th>Side</th><th>FSM State</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSymbol = null;
+    let currentStrategy = 'LONG'; // LONG or SHORT
+    let currentMode = 'PAPER'; // PAPER or LIVE
+    let allData = {};
+    let symbols = [];
+
+    const tabsContainer = document.getElementById('symbolTabs');
+
+    // Check Fyers authentication status
+    fetch('/fyers/status')
+      .then(r => r.json())
+      .then(status => {
+        if (!status.authenticated && status.configured) {
+          // Show auth button only if Indian indices are in symbols
+          // We wait for symbols to be populated
+          const checkInterval = setInterval(() => {
+            if (symbols.length > 0) {
+                const hasIndianIndices = symbols.some(s => ['NIFTY', 'BANKNIFTY', 'SENSEX'].includes(s));
+                if (hasIndianIndices) {
+                    document.getElementById('fyersAuthStatus').style.display = 'block';
+                }
+                clearInterval(checkInterval);
+            }
+          }, 500);
+        }
+      })
+      .catch(err => console.error('Fyers status check failed:', err));
+
+    function authenticateFyers() {
+      window.location.href = '/fyers/auth';
+    }
+
+    function renderSymbolTabs() {
+        tabsContainer.innerHTML = '';
+        symbols.forEach(sym => {
+          const btn = document.createElement('div');
+          btn.className = 'symbol-tab' + (sym === currentSymbol ? ' active' : '');
+          btn.innerText = sym;
+          btn.onclick = () => switchSymbol(sym);
+          tabsContainer.appendChild(btn);
+        });
+    }
+
+    function switchSymbol(sym) {
+      currentSymbol = sym;
+      document.querySelectorAll('.symbol-tab').forEach(el => {
+        el.classList.toggle('active', el.innerText === sym);
+      });
+      
+      // Update Tab Labels based on Symbol Type
+      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => sym.includes(s));
+      if (isIndian) {
+        document.getElementById('tabLong').innerText = 'CE Strategy (Bullish)';
+        document.getElementById('tabShort').innerText = 'PE Strategy (Bearish)';
+      } else {
+        document.getElementById('tabLong').innerText = 'LONG Strategy (BUY)';
+        document.getElementById('tabShort').innerText = 'SHORT Strategy (SELL)';
+      }
+      
+      updateDashboard();
+    }
+
+    function switchStrategy(strat) {
+      currentStrategy = strat;
+      document.getElementById('tabLong').classList.toggle('active', strat === 'LONG');
+      document.getElementById('tabShort').classList.toggle('active', strat === 'SHORT');
+      updateDashboard();
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      document.getElementById('modePaper').classList.toggle('active', mode === 'PAPER');
+      document.getElementById('modeLive').classList.toggle('active', mode === 'LIVE');
+      updateDashboard();
+    }
+
+    // WebSocket Connection
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(protocol + '//' + window.location.host);
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'INIT') {
+        allData = msg.data;
+        if (symbols.length === 0) {
+            symbols = Object.keys(allData);
+            if (!currentSymbol && symbols.length > 0) {
+                currentSymbol = symbols[0];
+            }
+            renderSymbolTabs();
+            // Initial switch to set labels
+            if (currentSymbol) switchSymbol(currentSymbol);
+        }
+        updateDashboard();
+      }
+      else if (msg.type === 'UPDATE') {
+        allData = msg.data;
+        updateDashboard();
+      }
+      else if (msg.type === 'SIGNAL') {
+        showToast(msg.data);
+      }
+    };
+    
+    function showToast(signal) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast ' + (signal.side === 'BUY' ? 'buy' : 'sell');
+      toast.innerHTML = `
+        <div style="font-weight: bold; font-size: 1.1em;">${signal.symbol} ${signal.side}</div>
+        <div style="font-size: 0.9em; color: var(--text-secondary);">Signal Received</div>
+      `;
+      
+      container.appendChild(toast);
+      
+      // Remove after 5 seconds
+      setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.5s ease-out';
+        toast.addEventListener('animationend', () => toast.remove());
+      }, 5000);
+    }
+
+    function updateDashboard() {
+      if (!currentSymbol || !allData[currentSymbol]) return;
+      const data = allData[currentSymbol];
+
+      const isLong = currentStrategy === 'LONG';
+      
+      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => currentSymbol.includes(s));
+      const currency = isIndian ? 'INR' : 'USDT';
+      
+      // 1. FSM State
+      const state = isLong ? data.buyState : data.sellState;
+      const stateEl = document.getElementById('fsmStateDisplay');
+      stateEl.innerText = state;
+      stateEl.className = 'state-highlight ' + (isLong ? 'buy-color' : 'sell-color');
+      
+      let fsmTitleText = '';
+      if (isIndian) {
+        fsmTitleText = isLong ? 'CE FSM STATE' : 'PE FSM STATE';
+      } else {
+        fsmTitleText = isLong ? 'BUY FSM STATE' : 'SELL FSM STATE';
+      }
+      document.getElementById('fsmTitle').innerText = fsmTitleText;
+
+      // 2. Anchors
+      const anchors = data.anchors || {};
+      document.getElementById('entryTrigger').innerText = isLong ? (anchors.buyEntryTrigger || '-') : (anchors.sellEntryTrigger || '-');
+      document.getElementById('stopLoss').innerText = isLong ? (anchors.buyStop || '-') : (anchors.sellStop || '-');
+
+      // 2.5 Timer (60-second windows)
+      const timerEl = document.getElementById('timerDisplay');
+      let windowStartTs = null;
+      let windowDuration = 60000;
+      let windowLabel = '';
+      
+      if (isLong) {
+        if (state === 'BUYENTRY_WINDOW' && data.buyEntryWindowStartTs) {
+          windowStartTs = data.buyEntryWindowStartTs;
+          windowLabel = '⏱️ Entry Window: ';
+        } else if (state === 'BUYPROFIT_WINDOW' && data.buyProfitWindowStartTs) {
+          windowStartTs = data.buyProfitWindowStartTs;
+          windowLabel = '⏱️ Profit Window: ';
+        } else if (state === 'WAIT_FOR_BUYENTRY' && data.waitForBuyEntryStartTs) {
+          windowStartTs = data.waitForBuyEntryStartTs;
+          windowLabel = '⏱️ Wait for Entry: ';
+        } else if (state === 'WAIT_WINDOW' && data.waitWindowSource && data.waitWindowSource.includes('BUY')) {
+          windowStartTs = data.waitWindowStartTs;
+          windowDuration = data.waitWindowDurationMs || 60000;
+          windowLabel = '⏱️ Wait Window: ';
+        }
+      } else {
+        if (state === 'SELLENTRY_WINDOW' && data.sellEntryWindowStartTs) {
+          windowStartTs = data.sellEntryWindowStartTs;
+          windowLabel = '⏱️ Entry Window: ';
+        } else if (state === 'SELLPROFIT_WINDOW' && data.sellProfitWindowStartTs) {
+          windowStartTs = data.sellProfitWindowStartTs;
+          windowLabel = '⏱️ Profit Window: ';
+        } else if (state === 'WAIT_FOR_SELLENTRY' && data.waitForSellEntryStartTs) {
+          windowStartTs = data.waitForSellEntryStartTs;
+          windowLabel = '⏱️ Wait for Entry: ';
+        } else if (state === 'WAIT_WINDOW' && data.waitWindowSource && data.waitWindowSource.includes('SELL')) {
+          windowStartTs = data.waitWindowStartTs;
+          windowDuration = data.waitWindowDurationMs || 60000;
+          windowLabel = '⏱️ Wait Window: ';
+        }
+      }
+      
+      if (windowStartTs) {
+        const elapsed = Date.now() - windowStartTs;
+        const remaining = Math.max(0, windowDuration - elapsed);
+        const seconds = Math.ceil(remaining / 1000);
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        timerEl.innerText = windowLabel + mins + ':' + secs.toString().padStart(2, '0');
+        timerEl.style.display = 'block';
+        if (seconds < 10) {
+          timerEl.style.color = 'var(--danger-color)';
+        } else {
+          timerEl.style.color = 'var(--warning-color)';
+        }
+      } else {
+        timerEl.style.display = 'none';
+      }
+
+
+      // 3. Position
+      const pos = isLong ? data.longPosition : data.shortPosition;
+      
+      let posTitleText = '';
+      if (isIndian) {
+        posTitleText = isLong ? 'CE POSITION' : 'PE POSITION';
+      } else {
+        posTitleText = isLong ? 'LONG POSITION' : 'SHORT POSITION';
+      }
+      document.getElementById('posTitle').innerText = posTitleText;
+      document.getElementById('posSize').innerText = pos ? pos.qty : 'None';
+      document.getElementById('posEntry').innerText = pos ? pos.entryPrice.toFixed(2) : '-';
+      const activeInstrument = isLong ? data.signalSymbolBuy : data.signalSymbolSell;
+      const displayPrice = activeInstrument?.ltp ?? data.pnl.lastPrice;
+      document.getElementById('lastPrice').innerText =
+        typeof displayPrice === 'number'
+          ? displayPrice.toFixed(2)
+          : displayPrice ?? '-';
+      const signalNameEl = document.getElementById('signalSymbolName');
+      const symbolLabel =
+        activeInstrument?.symbol ??
+        (isIndian ? currentSymbol + ' (index)' : currentSymbol);
+      signalNameEl.innerText = symbolLabel;
+      
+      // Calculate Unrealized PnL for specific side
+      let unrealized = 0;
+      if (pos && data.pnl.lastPrice) {
+        if (isLong) unrealized = (data.pnl.lastPrice - pos.entryPrice) * pos.qty;
+        else unrealized = (pos.entryPrice - data.pnl.lastPrice) * pos.qty;
+      }
+      const unPnlEl = document.getElementById('unrealizedPnl');
+      unPnlEl.innerText = unrealized.toFixed(2);
+      unPnlEl.style.color = unrealized >= 0 ? '#3fb950' : '#f85149';
+
+      // 4. Performance (Strategy-Specific)
+      const longPnl = data.pnl.longStats ? data.pnl.longStats.realizedPnl : 0;
+      const shortPnl = data.pnl.shortStats ? data.pnl.shortStats.realizedPnl : 0;
+      const longTrades = data.pnl.longStats ? data.pnl.longStats.tradeCount : 0;
+      const shortTrades = data.pnl.shortStats ? data.pnl.shortStats.tradeCount : 0;
+      
+      // Update title and strategy-specific metrics
+      let perfTitleText = '';
+      if (isIndian) {
+        perfTitleText = isLong ? 'CE PERFORMANCE' : 'PE PERFORMANCE';
+      } else {
+        perfTitleText = isLong ? 'LONG PERFORMANCE' : 'SHORT PERFORMANCE';
+      }
+      document.getElementById('perfTitle').innerText = perfTitleText;
+
+      if (isLong) {
+        document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
+        document.getElementById('strategyTrades').innerText = longTrades;
+        
+        // Session PnL = Realized (Long) + Unrealized (Long)
+        const sessionPnl = longPnl + unrealized;
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+      } else {
+        document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
+        document.getElementById('strategyTrades').innerText = shortTrades;
+
+        // Session PnL = Realized (Short) + Unrealized (Short)
+        const sessionPnl = shortPnl + unrealized;
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
+      }
+      
+      document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
+      document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
+
+      // 5. Tables
+      updateTables(data);
+    }
+
+    function updateTables(data) {
+      const isLong = currentStrategy === 'LONG';
+      const targetSide = isLong ? 'BUY' : 'SELL';
+
+      // Trades - Filter by strategy (or side for legacy data)
+      const tbody = document.querySelector('#tradesTable tbody');
+      tbody.innerHTML = '';
+      const allTrades = (data.pnl.trades || []).slice().reverse(); // Newest first
+      
+      const targetStrategy = isLong ? 'LONG' : 'SHORT';
+      const filteredTrades = allTrades.filter(t => {
+        // Filter by Mode
+        if (t.mode && t.mode !== currentMode) return false;
+        if (!t.mode && currentMode === 'LIVE') return false; // Legacy trades are assumed PAPER
+
+        if (t.strategy) return t.strategy === targetStrategy;
+        // Fallback for legacy data
+        return t.side === targetSide;
+      });
+      
+      filteredTrades.forEach(t => {
+        const row = `<tr>
+          <td>${new Date(t.ts).toLocaleTimeString()}</td>
+          <td>${t.type}</td>
+          <td class="${t.side === 'BUY' ? 'buy-color' : 'sell-color'}">${t.side}</td>
+          <td>${t.qty}</td>
+          <td>${t.price.toFixed(2)}</td>
+          <td style="color: ${(t.pnl || 0) >= 0 ? '#3fb950' : '#f85149'}">${t.pnl ? t.pnl.toFixed(2) : '-'}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+
+      // Signals - Filter by side
+      const sbody = document.querySelector('#signalsTable tbody');
+      sbody.innerHTML = '';
+      const allSignals = (data.signalHistory || []); // Newest first usually
+      const filteredSignals = allSignals.filter(s => s.side === targetSide);
+      
+      filteredSignals.forEach(s => {
+        const row = `<tr>
+          <td>${new Date(s.ts).toLocaleTimeString()}</td>
+          <td class="${s.side === 'BUY' ? 'buy-color' : 'sell-color'}">${s.side}</td>
+          <td>${s.state}</td>
+        </tr>`;
+        sbody.innerHTML += row;
+      });
+    }
+
+    function closePositions() {
+      if(confirm('Close all positions for ' + currentSymbol + '?')) {
+        fetch('/api/close?symbol=' + currentSymbol, { method: 'POST' });
+      }
+    }
+
+    function resetSystem() {
+      if(confirm('RESET SYSTEM for ' + currentSymbol + '? This will archive data.')) {
+        fetch('/api/reset?symbol=' + currentSymbol, { method: 'POST' });
+      }
+    }
+  </script>
+</body>
+</html>

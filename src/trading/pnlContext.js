@@ -1,14 +1,12 @@
 // src/trading/pnlContext.js
 export function createPnlContext({ symbol }) {
-  let positionQty = 0;
-  let avgPrice = 0;
-  let positionSide = null; // 'LONG' | 'SHORT' | null
+  // Independent positions
+  let longPosition = { qty: 0, avgPrice: 0 };
+  let shortPosition = { qty: 0, avgPrice: 0 };
 
   let lastPrice = null;
   let realizedPnl = 0;
-  let lifetimePnl = 0;
-  let lifetimeLongPnl = 0;
-  let lifetimeShortPnl = 0;
+  // Lifetime PnL removed as per user request
   let tradeCount = 0;
   const trades = [];
 
@@ -17,17 +15,19 @@ export function createPnlContext({ symbol }) {
   let shortStats = { realizedPnl: 0, tradeCount: 0 };
 
   function getUnrealizedPnl() {
-    if (lastPrice == null || positionQty === 0 || !positionSide) return 0;
-
-    if (positionSide === "LONG") {
-      // Long unrealized P&L: (current price - entry price) * qty
-      return (lastPrice - avgPrice) * positionQty;
-    } else if (positionSide === "SHORT") {
-      // Short unrealized P&L: (entry price - current price) * qty
-      return (avgPrice - lastPrice) * positionQty;
+    if (lastPrice == null) return 0;
+    
+    let longUpnl = 0;
+    if (longPosition.qty > 0) {
+      longUpnl = (lastPrice - longPosition.avgPrice) * longPosition.qty;
     }
 
-    return 0;
+    let shortUpnl = 0;
+    if (shortPosition.qty > 0) {
+      shortUpnl = (shortPosition.avgPrice - lastPrice) * shortPosition.qty;
+    }
+
+    return longUpnl + shortUpnl;
   }
 
   function getClosedTrades() {
@@ -88,25 +88,24 @@ export function createPnlContext({ symbol }) {
     const totalPnl = realizedPnl + unrealizedPnl;
     const metrics = calculateMetrics();
 
-    // Calculate real-time lifetime PnL (Stored Lifetime + Current Session Realized)
-    // Note: We don't add unrealized to lifetime usually, but if desired, we could.
-    // Standard practice: Lifetime = Closed Trades PnL.
-    const currentLifetimePnl = lifetimePnl + realizedPnl;
-    const currentLifetimeLongPnl = lifetimeLongPnl + longStats.realizedPnl;
-    const currentLifetimeShortPnl = lifetimeShortPnl + shortStats.realizedPnl;
-
     return {
       symbol,
-      positionQty,
-      positionSide,
-      avgPrice,
+      // We expose a summary "positionQty" for backward compatibility if needed,
+      // but ideally consumers should check longPosition/shortPosition if they need details.
+      // Net Position = Long - Short
+      positionQty: longPosition.qty - shortPosition.qty, 
+      
+      longPosition: { ...longPosition },
+      shortPosition: { ...shortPosition },
+
       lastPrice,
       realizedPnl: Number(realizedPnl.toFixed(2)),
       unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
       totalPnl: Number(totalPnl.toFixed(2)),
-      lifetimePnl: Number(currentLifetimePnl.toFixed(2)),
-      lifetimeLongPnl: Number(currentLifetimeLongPnl.toFixed(2)),
-      lifetimeShortPnl: Number(currentLifetimeShortPnl.toFixed(2)),
+      // Lifetime PnL removed
+      lifetimePnl: 0,
+      lifetimeLongPnl: 0,
+      lifetimeShortPnl: 0,
       tradeCount,
       longStats: {
         realizedPnl: Number(longStats.realizedPnl.toFixed(2)),
@@ -123,12 +122,13 @@ export function createPnlContext({ symbol }) {
 
   return {
     getOpenQty() {
-      return positionQty;
+      // Net quantity
+      return longPosition.qty - shortPosition.qty;
     },
-
-    getPositionSide() {
-      return positionSide;
-    },
+    
+    // Helper to get specific side qty
+    getLongQty() { return longPosition.qty; },
+    getShortQty() { return shortPosition.qty; },
 
     updateMarkPrice(price) {
       lastPrice = price;
@@ -140,17 +140,13 @@ export function createPnlContext({ symbol }) {
     },
 
     openPosition({ side, qty, price, mode = 'PAPER', meta = {} }) {
+      // side: 'BUY' (Open Long) or 'SELL' (Open Short)
+      
       if (side === "BUY") {
-        // Opening LONG position
-        if (positionSide === "SHORT") {
-          console.warn(
-            "[PnL] Warning: Opening LONG while SHORT position exists. This shouldn't happen."
-          );
-        }
-        const totalCost = avgPrice * positionQty + price * qty;
-        positionQty += qty;
-        avgPrice = positionQty > 0 ? totalCost / positionQty : 0;
-        positionSide = "LONG";
+        // OPEN LONG
+        const totalCost = longPosition.avgPrice * longPosition.qty + price * qty;
+        longPosition.qty += qty;
+        longPosition.avgPrice = longPosition.qty > 0 ? totalCost / longPosition.qty : 0;
 
         tradeCount += 1;
         trades.push({
@@ -159,21 +155,15 @@ export function createPnlContext({ symbol }) {
           side,
           qty,
           price,
-          strategy: "LONG", // Explicit strategy tag
-          mode, // PAPER or LIVE
+          strategy: "LONG",
+          mode,
           meta,
         });
       } else if (side === "SELL") {
-        // Opening SHORT position
-        if (positionSide === "LONG") {
-          console.warn(
-            "[PnL] Warning: Opening SHORT while LONG position exists. This shouldn't happen."
-          );
-        }
-        const totalCost = avgPrice * positionQty + price * qty;
-        positionQty += qty;
-        avgPrice = positionQty > 0 ? totalCost / positionQty : 0;
-        positionSide = "SHORT";
+        // OPEN SHORT
+        const totalCost = shortPosition.avgPrice * shortPosition.qty + price * qty;
+        shortPosition.qty += qty;
+        shortPosition.avgPrice = shortPosition.qty > 0 ? totalCost / shortPosition.qty : 0;
 
         tradeCount += 1;
         trades.push({
@@ -182,8 +172,8 @@ export function createPnlContext({ symbol }) {
           side,
           qty,
           price,
-          strategy: "SHORT", // Explicit strategy tag
-          mode, // PAPER or LIVE
+          strategy: "SHORT",
+          mode,
           meta,
         });
       }
@@ -191,23 +181,26 @@ export function createPnlContext({ symbol }) {
     },
 
     closePosition({ side, qty, price, mode = 'PAPER', meta = {} }) {
-      if (side === "SELL" && positionSide === "LONG") {
-        // Closing LONG with SELL
-        if (qty > positionQty) qty = positionQty; // safety
+      // side: 'SELL' (Close Long) or 'BUY' (Close Short)
 
-        const pnl = (price - avgPrice) * qty;
+      if (side === "SELL") {
+        // CLOSE LONG
+        if (longPosition.qty <= 0) {
+          console.warn("[PnL] Warning: Attempting to close LONG but no LONG position exists.");
+          return snapshot();
+        }
+        
+        const closeQty = Math.min(qty, longPosition.qty);
+        const pnl = (price - longPosition.avgPrice) * closeQty;
+        
         realizedPnl += pnl;
-
-        // Update Long Stats
         longStats.realizedPnl += pnl;
         longStats.tradeCount += 1;
 
-        positionQty -= qty;
-
-        if (positionQty <= 0) {
-          positionQty = 0;
-          avgPrice = 0;
-          positionSide = null;
+        longPosition.qty -= closeQty;
+        if (longPosition.qty <= 0) {
+          longPosition.qty = 0;
+          longPosition.avgPrice = 0;
         }
 
         tradeCount += 1;
@@ -215,30 +208,32 @@ export function createPnlContext({ symbol }) {
           ts: Date.now(),
           type: "CLOSE",
           side,
-          qty,
+          qty: closeQty,
           price,
           pnl,
-          strategy: "LONG", // Closing a LONG position
-          mode, // PAPER or LIVE
+          strategy: "LONG",
+          mode,
           meta,
         });
-      } else if (side === "BUY" && positionSide === "SHORT") {
-        // Closing SHORT with BUY
-        if (qty > positionQty) qty = positionQty; // safety
 
-        const pnl = (avgPrice - price) * qty;
+      } else if (side === "BUY") {
+        // CLOSE SHORT
+        if (shortPosition.qty <= 0) {
+          console.warn("[PnL] Warning: Attempting to close SHORT but no SHORT position exists.");
+          return snapshot();
+        }
+
+        const closeQty = Math.min(qty, shortPosition.qty);
+        const pnl = (shortPosition.avgPrice - price) * closeQty;
+
         realizedPnl += pnl;
-
-        // Update Short Stats
         shortStats.realizedPnl += pnl;
         shortStats.tradeCount += 1;
 
-        positionQty -= qty;
-
-        if (positionQty <= 0) {
-          positionQty = 0;
-          avgPrice = 0;
-          positionSide = null;
+        shortPosition.qty -= closeQty;
+        if (shortPosition.qty <= 0) {
+          shortPosition.qty = 0;
+          shortPosition.avgPrice = 0;
         }
 
         tradeCount += 1;
@@ -246,11 +241,11 @@ export function createPnlContext({ symbol }) {
           ts: Date.now(),
           type: "CLOSE",
           side,
-          qty,
+          qty: closeQty,
           price,
           pnl,
-          strategy: "SHORT", // Closing a SHORT position
-          mode, // PAPER or LIVE
+          strategy: "SHORT",
+          mode,
           meta,
         });
       }
@@ -260,13 +255,10 @@ export function createPnlContext({ symbol }) {
     // --- Persistence ---
     getState() {
       return {
-        positionQty,
-        avgPrice,
-        positionSide,
+        longPosition,
+        shortPosition,
         realizedPnl,
-        lifetimePnl,
-        lifetimeLongPnl,
-        lifetimeShortPnl,
+        // Lifetime PnL removed from state
         tradeCount,
         longStats,
         shortStats,
@@ -276,13 +268,28 @@ export function createPnlContext({ symbol }) {
 
     restoreState(state) {
       if (!state) return;
-      positionQty = state.positionQty || 0;
-      avgPrice = state.avgPrice || 0;
-      positionSide = state.positionSide || null;
+      
+      // Handle legacy state (single position) migration if needed
+      if (state.positionQty !== undefined && state.longPosition === undefined) {
+        // Legacy state detected. Try to map it.
+        if (state.positionSide === 'LONG') {
+          longPosition = { qty: state.positionQty, avgPrice: state.avgPrice };
+          shortPosition = { qty: 0, avgPrice: 0 };
+        } else if (state.positionSide === 'SHORT') {
+          shortPosition = { qty: state.positionQty, avgPrice: state.avgPrice };
+          longPosition = { qty: 0, avgPrice: 0 };
+        } else {
+          longPosition = { qty: 0, avgPrice: 0 };
+          shortPosition = { qty: 0, avgPrice: 0 };
+        }
+      } else {
+        // New state format
+        longPosition = state.longPosition || { qty: 0, avgPrice: 0 };
+        shortPosition = state.shortPosition || { qty: 0, avgPrice: 0 };
+      }
+
       realizedPnl = state.realizedPnl || 0;
-      lifetimePnl = state.lifetimePnl || 0;
-      lifetimeLongPnl = state.lifetimeLongPnl || 0;
-      lifetimeShortPnl = state.lifetimeShortPnl || 0;
+      // Lifetime PnL ignored
       tradeCount = state.tradeCount || 0;
 
       longStats = state.longStats || { realizedPnl: 0, tradeCount: 0 };
@@ -293,15 +300,13 @@ export function createPnlContext({ symbol }) {
         trades.push(...state.trades);
       }
     },
+    
     reset() {
-      // Add current session realized PnL to lifetime PnL before resetting
-      lifetimePnl += realizedPnl;
-      lifetimeLongPnl += longStats.realizedPnl;
-      lifetimeShortPnl += shortStats.realizedPnl;
-
-      positionQty = 0;
-      avgPrice = 0;
-      positionSide = null;
+      // No accumulation to lifetime PnL
+      
+      longPosition = { qty: 0, avgPrice: 0 };
+      shortPosition = { qty: 0, avgPrice: 0 };
+      
       realizedPnl = 0;
       tradeCount = 0;
 

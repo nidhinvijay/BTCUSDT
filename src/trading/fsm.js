@@ -352,11 +352,22 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       transitionTo("BUY", STATES.BUYPROFIT_WINDOW);
     } else {
       // Entry fails, WAIT_WINDOW then back to BUYENTRY_WINDOW
-      logger.info(
-        { ltp, buyEntryTrigger, remainingMs },
-        "BUYENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to BUYENTRY_WINDOW"
-      );
-      enterWaitWindow(remainingMs, "BUYENTRY_WINDOW", ts);
+      // Fix: If window already expired (negative remainingMs after restart), skip to next state
+      if (remainingMs <= 0) {
+        logger.info(
+          { ltp, buyEntryTrigger },
+          "BUYENTRY_WINDOW: expired on restart, moving to WAIT_FOR_BUYENTRY"
+        );
+        waitForBuyEntryStartTs = ts;
+        waitForBuyEntryFirstTickSeen = false;
+        transitionTo("BUY", STATES.WAIT_FOR_BUYENTRY);
+      } else {
+        logger.info(
+          { ltp, buyEntryTrigger, remainingMs },
+          "BUYENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to BUYENTRY_WINDOW"
+        );
+        enterWaitWindow(remainingMs, "BUYENTRY_WINDOW", ts);
+      }
     }
   }
 
@@ -382,11 +393,22 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       transitionTo("SELL", STATES.SELLPROFIT_WINDOW);
     } else {
       // Entry fails, WAIT_WINDOW then back to SELLENTRY_WINDOW
-      logger.info(
-        { ltp, sellEntryTrigger, remainingMs },
-        "SELLENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to SELLENTRY_WINDOW"
-      );
-      enterWaitWindow(remainingMs, "SELLENTRY_WINDOW", ts);
+      // Fix: If window already expired (negative remainingMs after restart), skip to next state
+      if (remainingMs <= 0) {
+        logger.info(
+          { ltp, sellEntryTrigger },
+          "SELLENTRY_WINDOW: expired on restart, moving to WAIT_FOR_SELLENTRY"
+        );
+        waitForSellEntryStartTs = ts;
+        waitForSellEntryFirstTickSeen = false;
+        transitionTo("SELL", STATES.WAIT_FOR_SELLENTRY);
+      } else {
+        logger.info(
+          { ltp, sellEntryTrigger, remainingMs },
+          "SELLENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to SELLENTRY_WINDOW"
+        );
+        enterWaitWindow(remainingMs, "SELLENTRY_WINDOW", ts);
+      }
     }
   }
 

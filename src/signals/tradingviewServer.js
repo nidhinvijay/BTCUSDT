@@ -112,7 +112,15 @@ export function startTradingViewServer({ activeBots, logger }) {
     if (match && match[1]) {
       const extracted = match[1].toUpperCase();
       signalInstrument = extracted;
-      const typeMatch = /(CE|PE|C|P)$/i.exec(extracted);
+
+      // Strip BSE: prefix for SENSEX symbols (Fyers uses just SENSEX, not BSE:SENSEX)
+      let cleanedSymbol = extracted;
+      if (extracted.startsWith('BSE:')) {
+        cleanedSymbol = extracted.replace(/^BSE:/, '');
+        signalInstrument = cleanedSymbol; // Use without BSE: prefix
+      }
+
+      const typeMatch = /(CE|PE|C|P)$/i.exec(cleanedSymbol);
       if (typeMatch) {
         const raw = typeMatch[1].toUpperCase();
         optionType = raw === 'PE' || raw === 'P' ? 'PUT' : 'CALL';
@@ -120,13 +128,31 @@ export function startTradingViewServer({ activeBots, logger }) {
         optionType = null;
       }
 
-      if (activeBots.has(extracted)) {
-        symbol = extracted;
+      if (activeBots.has(cleanedSymbol)) {
+        symbol = cleanedSymbol;
       } else {
-        for (const key of activeBots.keys()) {
-          if (extracted.startsWith(key)) {
-            symbol = key;
-            break;
+        // Handle common ticker aliases
+        if (cleanedSymbol.startsWith('BSX')) {
+          // BSX is SENSEX ticker - replace with SENSEX for routing
+          const sensexSymbol = cleanedSymbol.replace(/^BSX/, 'SENSEX');
+          if (activeBots.has('SENSEX')) {
+            symbol = 'SENSEX';
+            signalInstrument = sensexSymbol; // Use corrected symbol for Fyers
+          }
+        } else if (cleanedSymbol.startsWith('NIFY')) {
+          // Common typo NIFY → NIFTY
+          const niftySymbol = cleanedSymbol.replace(/^NIFY/, 'NIFTY');
+          if (activeBots.has('NIFTY')) {
+            symbol = 'NIFTY';
+            signalInstrument = niftySymbol;
+          }
+        } else {
+          // Try prefix matching for option symbols
+          for (const key of activeBots.keys()) {
+            if (cleanedSymbol.startsWith(key)) {
+              symbol = key;
+              break;
+            }
           }
         }
       }

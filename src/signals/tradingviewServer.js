@@ -75,12 +75,7 @@ function mapIndianOptionSymbol(symbol) {
     '12': 'D',
   };
 
-  if (root === 'NIFTY' || root === 'FINNIFTY') {
-    const mon3 = MONTH_3L[mm];
-    if (!mon3) return null;
-    return { fyersSymbol: `NSE:${root}${yy}${mon3}${strike}${cepe}`, optionType };
-  }
-
+  // All Indian options use month letter + day format (e.g., 25D02 for 2025 Dec 02)
   const monLetter = MONTH_LETTER[mm];
   if (!monLetter) return null;
   const expiryCode = `${yy}${monLetter}${dd}`;

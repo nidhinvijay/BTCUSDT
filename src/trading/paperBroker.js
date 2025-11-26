@@ -11,10 +11,12 @@ export function createPaperBroker({ symbol, pnlContext, logger }) {
         meta.reason &&
         (meta.reason.includes("TRIGGER_HIT") || meta.reason.includes("OPEN"));
 
+      const mode = meta.mode || 'PAPER';
+
       if (isOpening) {
-        return pnlContext.openPosition({ side: "BUY", qty, price, mode: 'PAPER', meta });
+        return pnlContext.openPosition({ side: "BUY", qty, price, mode, meta });
       } else {
-        return pnlContext.closePosition({ side: "BUY", qty, price, mode: 'PAPER', meta });
+        return pnlContext.closePosition({ side: "BUY", qty, price, mode, meta });
       }
     },
 
@@ -27,10 +29,12 @@ export function createPaperBroker({ symbol, pnlContext, logger }) {
         meta.reason &&
         (meta.reason.includes("STOP_HIT") || meta.reason.includes("CLOSE"));
 
+      const mode = meta.mode || 'PAPER';
+
       if (isClosing) {
-        return pnlContext.closePosition({ side: "SELL", qty, price, mode: 'PAPER', meta });
+        return pnlContext.closePosition({ side: "SELL", qty, price, mode, meta });
       } else {
-        return pnlContext.openPosition({ side: "SELL", qty, price, mode: 'PAPER', meta });
+        return pnlContext.openPosition({ side: "SELL", qty, price, mode, meta });
       }
     },
 

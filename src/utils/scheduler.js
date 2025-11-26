@@ -19,9 +19,10 @@ export function startScheduler(activeBots) {
 
     if (currentMinuteKey === lastTriggerMinute) return;
 
-    // 1. Indian Markets Close at 15:30 IST (3:30 PM)
-    if (hours === 15 && minutes === 30) {
-      logger.info("⏰ 15:30 IST - Triggering Reset for Indian Markets");
+    // 1. Indian Markets Reset at 09:00 IST (9:00 AM next day)
+    // This clears the previous day's data just before market opens at 09:15
+    if (hours === 9 && minutes === 0) {
+      logger.info("⏰ 09:00 IST - Triggering Daily Reset for Indian Markets");
       ['NIFTY', 'BANKNIFTY', 'SENSEX'].forEach(symbol => {
         if (activeBots.has(symbol)) {
           triggerSymbolReset(symbol, activeBots.get(symbol));
@@ -61,7 +62,7 @@ function triggerSymbolReset(symbol, bot) {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const archivePath = path.join(archiveDir, `${symbol}_${timestamp}.json`);
       fs.copyFileSync(filePath, archivePath);
-      
+
       // 3. Delete State File
       fs.unlinkSync(filePath);
       logger.info(`[${symbol}] State file archived and deleted.`);
@@ -70,7 +71,7 @@ function triggerSymbolReset(symbol, bot) {
     // 4. Reset Memory State (Soft Reset)
     bot.pnlContext.reset();
     bot.fsm.reset();
-    
+
     logger.info(`[${symbol}] In-memory state reset. Ready for next session.`);
 
   } catch (err) {

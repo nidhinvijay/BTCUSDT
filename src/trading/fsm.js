@@ -292,6 +292,14 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   function handleBuySignalTick(tick) {
     if (!buySignalFirstTickPending) return;
+    
+    // For Indian indices, only accept ticks from option feed (not index)
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => symbol.includes(s));
+    if (isIndian && tick.source === 'base') {
+      // Ignore index ticks when waiting for option tick
+      return;
+    }
+    
     const { ltp, ts } = tick;
 
     savedBUYLTP = ltp;
@@ -303,7 +311,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     buyEntryFirstTickPending = true;
 
     logger.info(
-      { savedBUYLTP, buyEntryTrigger, buyStop },
+      { savedBUYLTP, buyEntryTrigger, buyStop, source: tick.source },
       "BUYSIGNAL first tick processed, entering BUYENTRY_WINDOW"
     );
 
@@ -312,6 +320,13 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   function handleSellSignalTick(tick) {
     if (!sellSignalFirstTickPending) return;
+    
+    // For Indian indices, only accept ticks from option feed (not index)
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => symbol.includes(s));
+    if (isIndian && tick.source === 'base') {
+      // Ignore index ticks when waiting for option tick
+      return;
+    }
     const { ltp, ts } = tick;
 
     savedSELLLTP = ltp;
@@ -323,7 +338,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     sellEntryFirstTickPending = true;
 
     logger.info(
-      { savedSELLLTP, sellEntryTrigger, sellStop },
+      { savedSELLLTP, sellEntryTrigger, sellStop, source: tick.source },
       "SELLSIGNAL first tick processed, entering SELLENTRY_WINDOW"
     );
 

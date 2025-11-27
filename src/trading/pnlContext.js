@@ -1,8 +1,8 @@
 // src/trading/pnlContext.js
 export function createPnlContext({ symbol }) {
   // Independent positions
-  let longPosition = { qty: 0, avgPrice: 0 };
-  let shortPosition = { qty: 0, avgPrice: 0 };
+  let longPosition = { qty: 0, avgPrice: 0, mode: null };
+  let shortPosition = { qty: 0, avgPrice: 0, mode: null };
 
   let lastPrice = null;
   let realizedPnl = 0;
@@ -158,6 +158,7 @@ export function createPnlContext({ symbol }) {
         const totalCost = longPosition.avgPrice * longPosition.qty + price * qty;
         longPosition.qty += qty;
         longPosition.avgPrice = longPosition.qty > 0 ? totalCost / longPosition.qty : 0;
+        longPosition.mode = mode;
 
         tradeCount += 1;
         if (mode === 'LIVE') liveStats.tradeCount += 1;
@@ -177,6 +178,7 @@ export function createPnlContext({ symbol }) {
         const totalCost = shortPosition.avgPrice * shortPosition.qty + price * qty;
         shortPosition.qty += qty;
         shortPosition.avgPrice = shortPosition.qty > 0 ? totalCost / shortPosition.qty : 0;
+        shortPosition.mode = mode;
 
         tradeCount += 1;
         if (mode === 'LIVE') liveStats.tradeCount += 1;
@@ -221,6 +223,7 @@ export function createPnlContext({ symbol }) {
         if (longPosition.qty <= 0) {
           longPosition.qty = 0;
           longPosition.avgPrice = 0;
+          longPosition.mode = null;
         }
 
         tradeCount += 1;
@@ -259,6 +262,7 @@ export function createPnlContext({ symbol }) {
         if (shortPosition.qty <= 0) {
           shortPosition.qty = 0;
           shortPosition.avgPrice = 0;
+          shortPosition.mode = null;
         }
 
         tradeCount += 1;
@@ -299,19 +303,21 @@ export function createPnlContext({ symbol }) {
       if (state.positionQty !== undefined && state.longPosition === undefined) {
         // Legacy state detected. Try to map it.
         if (state.positionSide === 'LONG') {
-          longPosition = { qty: state.positionQty, avgPrice: state.avgPrice };
-          shortPosition = { qty: 0, avgPrice: 0 };
+          longPosition = { qty: state.positionQty, avgPrice: state.avgPrice, mode: null };
+          shortPosition = { qty: 0, avgPrice: 0, mode: null };
         } else if (state.positionSide === 'SHORT') {
-          shortPosition = { qty: state.positionQty, avgPrice: state.avgPrice };
-          longPosition = { qty: 0, avgPrice: 0 };
+          shortPosition = { qty: state.positionQty, avgPrice: state.avgPrice, mode: null };
+          longPosition = { qty: 0, avgPrice: 0, mode: null };
         } else {
-          longPosition = { qty: 0, avgPrice: 0 };
-          shortPosition = { qty: 0, avgPrice: 0 };
+          longPosition = { qty: 0, avgPrice: 0, mode: null };
+          shortPosition = { qty: 0, avgPrice: 0, mode: null };
         }
       } else {
         // New state format
-        longPosition = state.longPosition || { qty: 0, avgPrice: 0 };
-        shortPosition = state.shortPosition || { qty: 0, avgPrice: 0 };
+        longPosition = state.longPosition || { qty: 0, avgPrice: 0, mode: null };
+        shortPosition = state.shortPosition || { qty: 0, avgPrice: 0, mode: null };
+        if (longPosition.mode === undefined) longPosition.mode = null;
+        if (shortPosition.mode === undefined) shortPosition.mode = null;
       }
 
       realizedPnl = state.realizedPnl || 0;
@@ -331,8 +337,8 @@ export function createPnlContext({ symbol }) {
     reset() {
       // No accumulation to lifetime PnL
       
-      longPosition = { qty: 0, avgPrice: 0 };
-      shortPosition = { qty: 0, avgPrice: 0 };
+      longPosition = { qty: 0, avgPrice: 0, mode: null };
+      shortPosition = { qty: 0, avgPrice: 0, mode: null };
       
       realizedPnl = 0;
       tradeCount = 0;

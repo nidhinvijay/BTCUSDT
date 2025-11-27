@@ -71,10 +71,25 @@ export class FyersAuth {
       if (response.data.code === 200 && response.data.s === 'ok') {
         this.accessToken = response.data.access_token;
         this.refreshToken = response.data.refresh_token;
+        
+        // Calculate next 9:00 AM IST (market open time when tokens expire)
+        const now = new Date();
+        const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+        const nowIST = new Date(now.getTime() + istOffset);
+        const next9AM = new Date(nowIST);
+        next9AM.setHours(9, 0, 0, 0);
+        
+        // If it's already past 9 AM today, set to 9 AM tomorrow
+        if (nowIST.getHours() >= 9) {
+          next9AM.setDate(next9AM.getDate() + 1);
+        }
+        
+        const expiresAt = next9AM.getTime() - istOffset; // Convert back to UTC for storage
+        
         this.saveToken({
           accessToken: this.accessToken,
           refreshToken: this.refreshToken,
-          expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+          expiresAt: expiresAt,
         });
 
         this.logger.info('✅ Fyers API v3 access token obtained successfully');
@@ -129,10 +144,24 @@ export class FyersAuth {
           this.refreshToken = response.data.refresh_token;
         }
 
+        // Calculate next 9:00 AM IST (market open time when tokens expire)
+        const now = new Date();
+        const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+        const nowIST = new Date(now.getTime() + istOffset);
+        const next9AM = new Date(nowIST);
+        next9AM.setHours(9, 0, 0, 0);
+        
+        // If it's already past 9 AM today, set to 9 AM tomorrow
+        if (nowIST.getHours() >= 9) {
+          next9AM.setDate(next9AM.getDate() + 1);
+        }
+        
+        const expiresAt = next9AM.getTime() - istOffset; // Convert back to UTC for storage
+
         this.saveToken({
           accessToken: this.accessToken,
           refreshToken: this.refreshToken,
-          expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+          expiresAt: expiresAt,
         });
 
         this.logger.info('✅ Token refreshed successfully');

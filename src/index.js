@@ -147,7 +147,7 @@ async function main() {
       if (source !== priceFeed.active) return;
       pnlContext.updateMarkPrice(tick.ltp);
       smartBroker.onTick();
-      fsm.onTick({ ltp: tick.ltp, ts: tick.ts || Date.now() });
+      fsm.onTick({ ltp: tick.ltp, ts: tick.ts || Date.now(), source: source });
     };
 
     const detachInstrument = (side) => {

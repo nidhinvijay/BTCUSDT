@@ -229,8 +229,9 @@
         <h3 id="posTitle">ACTIVE POSITION</h3>
         <div class="stat-row"><span>Size:</span> <span id="posSize" class="stat-value">None</span></div>
         <div class="stat-row"><span>Entry Price:</span> <span id="posEntry" class="stat-value">-</span></div>
-      <div class="stat-row"><span>Current Price:</span> <span id="lastPrice" class="stat-value">-</span></div>
-      <div class="stat-row"><span>Instrument:</span> <span id="signalSymbolName" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Current Price:</span> <span id="lastPrice" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Instrument:</span> <span id="signalSymbolName" class="stat-value">-</span></div>
+        <div class="stat-row"><span>Mode:</span> <span id="posMode" class="stat-value">-</span></div>
         <div class="stat-row"><span>Unrealized PnL:</span> <span id="unrealizedPnl" class="stat-value">0.00</span></div>
       </div>
 
@@ -490,6 +491,7 @@
 
       // 3. Position
       const pos = isLong ? data.longPosition : data.shortPosition;
+      const pnlPosition = isLong ? data.pnl.longPosition : data.pnl.shortPosition;
       
       let posTitleText = '';
       if (isIndian) {
@@ -511,6 +513,15 @@
         activeInstrument?.symbol ??
         (isIndian ? currentSymbol + ' (index)' : currentSymbol);
       signalNameEl.innerText = symbolLabel;
+      const posModeEl = document.getElementById('posMode');
+      if (pnlPosition && pnlPosition.qty > 0) {
+        const modeLabel = pnlPosition.mode || 'PAPER';
+        posModeEl.innerText = modeLabel;
+        posModeEl.style.color = modeLabel === 'LIVE' ? '#3fb950' : 'var(--text-secondary)';
+      } else {
+        posModeEl.innerText = pos && pos.qty > 0 ? 'PAPER' : '-';
+        posModeEl.style.color = 'var(--text-secondary)';
+      }
       
       // Calculate Unrealized PnL for specific side
       let unrealized = 0;
@@ -616,6 +627,16 @@
         </tr>`;
         tbody.innerHTML += row;
       });
+      if (filteredTrades.length === 0) {
+        const pnlPos = isLong ? data.pnl.longPosition : data.pnl.shortPosition;
+        let emptyMsg = currentMode === 'LIVE'
+          ? 'No LIVE trades yet. Waiting for the first LIVE execution.'
+          : 'No trades yet.';
+        if (currentMode === 'LIVE' && pnlPos && pnlPos.qty > 0 && (pnlPos.mode || 'PAPER') !== 'LIVE') {
+          emptyMsg = 'Current position was opened in PAPER before the auto-switch. Next LIVE trade will appear here.';
+        }
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: var(--text-secondary); font-style: italic;">${emptyMsg}</td></tr>`;
+      }
 
       // Signals - Filter by side
       const sbody = document.querySelector('#signalsTable tbody');

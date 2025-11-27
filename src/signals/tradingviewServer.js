@@ -32,54 +32,63 @@ function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
 }
 
 function mapIndianOptionSymbol(symbol) {
-  const raw = symbol.startsWith('NSE:') ? symbol.slice(4) : symbol;
-  const match = /^(NIFTY|FINNIFTY|BANKNIFTY|SENSEX)(\d{2})(\d{2})(\d{2})([CP])(\d+)$/.exec(raw);
+  const raw = symbol.startsWith('NSE:') || symbol.startsWith('BSE:') ? symbol.slice(4) : symbol;
+  
+  // Pattern: ROOT + YY + MM + DD + (C/P) + STRIKE
+  const match = /^(NIFTY|BANKNIFTY|SENSEX|BSX)(\d{2})(\d{2})(\d{2})([CP])(\d+)$/.exec(raw);
   if (!match) {
+    // Fallback: Try to determine if it's a valid Fyers symbol
     const fyersSymbol = symbol.includes(':') ? symbol : `NSE:${symbol}`;
     const suffixMatch = /(CE|PE|C|P)$/i.exec(raw);
     const optionType = suffixMatch ? (suffixMatch[1].startsWith('P') ? 'PUT' : 'CALL') : null;
     return { fyersSymbol, optionType };
   }
 
-  const [, root, yy, mm, dd, cp, strike] = match;
+  const [, root, yy, mm, dd, cp, strikeRaw] = match;
+  
+  // BSX (TradingView) maps to SENSEX (Fyers)
+  const rootSymbol = (root === 'BSX') ? 'SENSEX' : root;
+  
   const cepe = cp === 'C' ? 'CE' : 'PE';
   const optionType = cepe === 'CE' ? 'CALL' : 'PUT';
 
   const MONTH_3L = {
-    '01': 'JAN',
-    '02': 'FEB',
-    '03': 'MAR',
-    '04': 'APR',
-    '05': 'MAY',
-    '06': 'JUN',
-    '07': 'JUL',
-    '08': 'AUG',
-    '09': 'SEP',
-    '10': 'OCT',
-    '11': 'NOV',
-    '12': 'DEC',
+    '01': 'JAN', '02': 'FEB', '03': 'MAR', '04': 'APR',
+    '05': 'MAY', '06': 'JUN', '07': 'JUL', '08': 'AUG',
+    '09': 'SEP', '10': 'OCT', '11': 'NOV', '12': 'DEC',
   };
 
   const MONTH_LETTER = {
-    '01': 'A',
-    '02': 'F',
-    '03': 'M',
-    '04': 'A',
-    '05': 'M',
-    '06': 'J',
-    '07': 'J',
-    '08': 'A',
-    '09': 'S',
-    '10': 'O',
-    '11': 'N',
-    '12': 'D',
+    '01': '1', '02': '2', '03': '3', '04': '4', '05': '5', '06': '6',
+    '07': '7', '08': '8', '09': '9', '10': 'O', '11': 'N', '12': 'D',
   };
 
-  // All Indian options use month letter + day format (e.g., 25D02 for 2025 Dec 02)
-  const monLetter = MONTH_LETTER[mm];
-  if (!monLetter) return null;
-  const expiryCode = `${yy}${monLetter}${dd}`;
-  return { fyersSymbol: `NSE:${root}${expiryCode}${strike}${cepe}`, optionType };
+  // BANKNIFTY only has MONTHLY expiries (no weekly), so use 3-letter month WITHOUT day
+  // SENSEX final week (last Thursday, day >= 23) also uses monthly format
+  // NIFTY and SENSEX weekly use single-letter month + day
+  let expiryCode;
+  if (rootSymbol === 'BANKNIFTY') {
+    const month3L = MONTH_3L[mm];
+    if (!month3L) return null;
+    expiryCode = `${yy}${month3L}`; // No day for BANKNIFTY monthly
+  } else if (rootSymbol === 'SENSEX' && parseInt(dd) >= 23) {
+    // SENSEX final week (day >= 23) uses monthly format
+    const month3L = MONTH_3L[mm];
+    if (!month3L) return null;
+    expiryCode = `${yy}${month3L}`; // Monthly format for SENSEX final week
+  } else {
+    const monLetter = MONTH_LETTER[mm];
+    if (!monLetter) return null;
+    expiryCode = `${yy}${monLetter}${dd}`; // Day included for NIFTY/SENSEX weekly
+  }
+  
+  // SENSEX options are on BSE, not NSE
+  const exchange = rootSymbol === 'SENSEX' ? 'BSE' : 'NSE';
+
+  // Use exact strike from TradingView (no adjustments needed)
+  const strike = strikeRaw;
+
+  return { fyersSymbol: `${exchange}:${rootSymbol}${expiryCode}${strike}${cepe}`, optionType };
 }
 
 export function setWss(wss) {

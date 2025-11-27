@@ -9,7 +9,8 @@ export function createSmartBroker({ paperBroker, liveBroker, pnlContext, logger 
 
   function checkAutoSwitch() {
     // We use totalPnl (Realized + Unrealized) to determine the state
-    const { totalPnl, liveStats, symbol } = pnlContext.getSnapshot();
+    const snapshot = pnlContext.getSnapshot();
+    const { totalPnl, liveStats, symbol, longPosition, shortPosition } = snapshot;
 
     // 1. Check Session Profit Target (Indian Indices Only)
     // If we hit the target, we STOP Live trading to lock in profits for the day.
@@ -36,6 +37,16 @@ export function createSmartBroker({ paperBroker, liveBroker, pnlContext, logger 
     // "if the first one goes below zero then second one will exit"
     if (totalPnl > 0 && !isLiveActive) {
       logger.info(`[SmartBroker] 🟢 PnL (${totalPnl.toFixed(2)}) > 0. Activating LIVE mode.`);
+      const carried = [];
+      if (longPosition && longPosition.qty > 0) {
+        carried.push(`LONG qty=${longPosition.qty} (${longPosition.mode || 'PAPER'})`);
+      }
+      if (shortPosition && shortPosition.qty > 0) {
+        carried.push(`SHORT qty=${shortPosition.qty} (${shortPosition.mode || 'PAPER'})`);
+      }
+      if (carried.length) {
+        logger.info(`[SmartBroker] ${symbol} existing positions remain PAPER until they close: ${carried.join(', ')}`);
+      }
       isLiveActive = true;
     } else if (totalPnl <= 0 && isLiveActive) {
       logger.info(`[SmartBroker] 🔴 PnL (${totalPnl.toFixed(2)}) <= 0. Deactivating LIVE mode. Closing all LIVE positions.`);

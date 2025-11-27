@@ -220,6 +220,7 @@ async function main() {
         symbol,
         onTick: (tick) => {
           pnlContext.updateMarkPrice(tick.ltp);
+          smartBroker.onTick();
           fsm.onTick(tick);
         },
         logger

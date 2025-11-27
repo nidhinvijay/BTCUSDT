@@ -294,7 +294,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     if (!buySignalFirstTickPending) return;
     
     // For Indian indices, only accept ticks from option feed (not index)
-    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => symbol.includes(s));
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
     if (isIndian && tick.source === 'base') {
       // Ignore index ticks when waiting for option tick
       return;
@@ -322,7 +322,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     if (!sellSignalFirstTickPending) return;
     
     // For Indian indices, only accept ticks from option feed (not index)
-    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => symbol.includes(s));
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
     if (isIndian && tick.source === 'base') {
       // Ignore index ticks when waiting for option tick
       return;

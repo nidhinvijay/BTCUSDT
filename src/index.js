@@ -7,13 +7,13 @@ import { startTradingViewServer } from './signals/tradingviewServer.js';
 import { createSignalBus } from './signals/signalBus.js';
 import { createFSM } from './trading/fsm.js';
 import { createPaperBroker } from './trading/paperBroker.js';
-import { createSmartBroker } from './trading/smartBroker.js';
 import { createLiveBroker } from './trading/liveBroker.js';
 import { createPnlContext } from './trading/pnlContext.js';
 import { startMarketStream } from './exchange/marketStream.js';
-import { SessionManager } from './state/sessionState.js';
 import { upsertMachineState } from './utils/stateStore.js';
 import { resumeState } from './utils/resumer.js';
+import { createLiveCompositeBroker } from './trading/liveCompositeBroker.js';
+import { createLiveController } from './trading/liveController.js';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { startScheduler } from './utils/scheduler.js';
@@ -65,21 +65,48 @@ async function main() {
   for (const symbol of config.symbols) {
     logger.info(`Initializing bot for ${symbol}...`);
 
-    // 1. Initialize Session Manager
-    const sessionManager = new SessionManager(-1000); // Default daily loss limit
-
-    const signalBus = createSignalBus();
-    const pnlContext = createPnlContext({ symbol });
-    const paperBroker = createPaperBroker({ symbol, pnlContext, logger });
-    const liveBroker = createLiveBroker({ symbol, logger });
-    const smartBroker = createSmartBroker({ paperBroker, liveBroker, pnlContext, logger });
-
-    // 2. Initialize FSM
-    const fsm = createFSM({
+    // 1. Initialize Paper bot stack
+    const paper = {
+      signalBus: createSignalBus(),
+      pnlContext: createPnlContext({ symbol }),
+    };
+    paper.broker = createPaperBroker({ symbol, pnlContext: paper.pnlContext, logger, modeLabel: 'PAPER' });
+    paper.fsm = createFSM({
       symbol,
-      signalBus,
-      broker: smartBroker,
-      pnlContext,
+      signalBus: paper.signalBus,
+      broker: paper.broker,
+      pnlContext: paper.pnlContext,
+      logger
+    });
+
+    // 2. Initialize Live bot stack
+    const live = {
+      signalBus: createSignalBus(),
+      pnlContext: createPnlContext({ symbol }),
+    };
+    const liveBookkeepingBroker = createPaperBroker({
+      symbol,
+      pnlContext: live.pnlContext,
+      logger,
+      modeLabel: 'LIVE'
+    });
+    const liveExecutionBroker = createLiveBroker({ symbol, logger });
+    live.broker = createLiveCompositeBroker({
+      executionBroker: liveExecutionBroker,
+      bookkeepingBroker: liveBookkeepingBroker,
+      logger
+    });
+    live.fsm = createFSM({
+      symbol,
+      signalBus: live.signalBus,
+      broker: live.broker,
+      pnlContext: live.pnlContext,
+      logger
+    });
+
+    const liveController = createLiveController({
+      paperPnlContext: paper.pnlContext,
+      liveBot: live,
       logger
     });
 
@@ -99,18 +126,25 @@ async function main() {
       }
     };
 
-    if (resumeState(fsm, sessionManager, pnlContext, symbol)) {
+    if (resumeState({ paper, live }, symbol)) {
       logger.info(`[${symbol}] State resumed successfully.`);
     } else {
       logger.info(`[${symbol}] No saved state found, starting fresh.`);
     }
+    liveController.onTick();
 
     // 4. Auto-Save State & Immediate Save Helper
     const saveState = () => {
       const stateToSave = {
-        fsm: fsm.getState(),
-        session: sessionManager.getState(),
-        pnl: pnlContext.getState(),
+        paper: {
+          fsm: paper.fsm.getState(),
+          pnl: paper.pnlContext.getState()
+        },
+        live: {
+          fsm: live.fsm.getState(),
+          pnl: live.pnlContext.getState(),
+          isActive: liveController.isLiveActive()
+        },
         signalSymbolState: {
           buy: { display: signalSymbolState.buy.display, fyersSymbol: signalSymbolState.buy.fyersSymbol },
           sell: { display: signalSymbolState.sell.display, fyersSymbol: signalSymbolState.sell.fyersSymbol }
@@ -126,12 +160,14 @@ async function main() {
     }, 60000);
 
     // Immediate Save on Critical Events (Signals)
-    signalBus.onBuy(() => {
+    paper.signalBus.onBuy(() => {
       logger.info(`[${symbol}] Immediate state save triggered by BUY signal`);
+      liveController.forwardSignal('BUY');
       saveState();
     });
-    signalBus.onSell(() => {
+    paper.signalBus.onSell(() => {
       logger.info(`[${symbol}] Immediate state save triggered by SELL signal`);
+      liveController.forwardSignal('SELL');
       saveState();
     });
 
@@ -145,9 +181,12 @@ async function main() {
     const feedPriceTick = (source, tick) => {
       if (!tick || typeof tick.ltp !== 'number') return;
       if (source !== priceFeed.active) return;
-      pnlContext.updateMarkPrice(tick.ltp);
-      smartBroker.onTick();
-      fsm.onTick({ ltp: tick.ltp, ts: tick.ts || Date.now(), source: source });
+      const normalizedTick = { ltp: tick.ltp, ts: tick.ts || Date.now(), source };
+      paper.pnlContext.updateMarkPrice(normalizedTick.ltp);
+      live.pnlContext.updateMarkPrice(normalizedTick.ltp);
+      liveController.onTick();
+      paper.fsm.onTick(normalizedTick);
+      live.fsm.onTick(normalizedTick);
     };
 
     const detachInstrument = (side) => {
@@ -219,9 +258,12 @@ async function main() {
       startMarketStream({
         symbol,
         onTick: (tick) => {
-          pnlContext.updateMarkPrice(tick.ltp);
-          smartBroker.onTick();
-          fsm.onTick(tick);
+          const normalizedTick = { ltp: tick.ltp, ts: tick.ts || Date.now(), source: 'base' };
+          paper.pnlContext.updateMarkPrice(normalizedTick.ltp);
+          live.pnlContext.updateMarkPrice(normalizedTick.ltp);
+          liveController.onTick();
+          paper.fsm.onTick(normalizedTick);
+          live.fsm.onTick(normalizedTick);
         },
         logger
       });
@@ -231,11 +273,9 @@ async function main() {
 
     // Store in Map
     activeBots.set(symbol, {
-      fsm,
-      signalBus,
-      pnlContext,
-      sessionManager,
-      smartBroker, // Added SmartBroker to access isLive()
+      paper,
+      live,
+      controller: liveController,
       signalSymbolState,
       setInstrument,
     });
@@ -261,6 +301,17 @@ async function main() {
   wss.on('connection', (ws) => {
     logger.info('Dashboard client connected via WebSocket');
 
+    const buildPayload = (stack) => ({
+      buyState: stack.fsm.getBuyState(),
+      sellState: stack.fsm.getSellState(),
+      pnl: stack.pnlContext.getSnapshot(),
+      anchors: stack.fsm.getAnchors(),
+      signalHistory: stack.fsm.getSignalHistory(),
+      longPosition: stack.fsm.getLongPosition(),
+      shortPosition: stack.fsm.getShortPosition(),
+      ...stack.fsm.getState()
+    });
+
     // Send initial state for ALL symbols
     const fullState = {};
     activeBots.forEach((bot, symbol) => {
@@ -279,11 +330,9 @@ async function main() {
           }
         : null;
       fullState[symbol] = {
-        buyState: bot.fsm.getBuyState(),
-        sellState: bot.fsm.getSellState(),
-        pnl: bot.pnlContext.getSnapshot(),
-        mode: bot.smartBroker.isLive() ? 'LIVE' : 'PAPER', // Send Mode
-        // Add other needed data
+        paper: buildPayload(bot.paper),
+        live: buildPayload(bot.live),
+        mode: bot.controller.isLiveActive() ? 'LIVE' : 'PAPER',
         signalSymbolBuy: buyState,
         signalSymbolSell: sellState,
       };
@@ -309,17 +358,11 @@ async function main() {
             }
           : null;
         updates[symbol] = {
-          buyState: bot.fsm.getBuyState(),
-          sellState: bot.fsm.getSellState(),
-          pnl: bot.pnlContext.getSnapshot(),
-          mode: bot.smartBroker.isLive() ? 'LIVE' : 'PAPER', // Send Mode
-          anchors: bot.fsm.getAnchors(),
-          signalHistory: bot.fsm.getSignalHistory(),
-          longPosition: bot.fsm.getLongPosition(),
-          shortPosition: bot.fsm.getShortPosition(),
+          paper: buildPayload(bot.paper),
+          live: buildPayload(bot.live),
+          mode: bot.controller.isLiveActive() ? 'LIVE' : 'PAPER',
           signalSymbolBuy: buyState,
           signalSymbolSell: sellState,
-          ...bot.fsm.getState() // Include all FSM state data (timestamps, etc.)
         };
       });
       ws.send(JSON.stringify({ type: 'UPDATE', data: updates }));

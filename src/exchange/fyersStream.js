@@ -5,7 +5,6 @@ const FYERS_SYMBOL_MAP = {
   NIFTY: 'NSE:NIFTY50-INDEX',
   BANKNIFTY: 'NSE:NIFTYBANK-INDEX',
   SENSEX: 'BSE:SENSEX-INDEX',
-  FINNIFTY: 'NSE:FINNIFTY-INDEX',
 };
 
 export async function startFyersStream({

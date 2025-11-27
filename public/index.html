@@ -317,7 +317,7 @@
       });
       
       // Update Tab Labels based on Symbol Type
-      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => sym.includes(s));
+      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => sym.includes(s));
       if (isIndian) {
         document.getElementById('tabLong').innerText = 'CE Strategy (Bullish)';
         document.getElementById('tabShort').innerText = 'PE Strategy (Bearish)';
@@ -402,16 +402,18 @@
 
     function updateDashboard() {
       if (!currentSymbol || !allData[currentSymbol]) return;
-      const data = allData[currentSymbol];
+      const symbolData = allData[currentSymbol];
+      const data = currentMode === 'LIVE' ? symbolData.live : symbolData.paper;
+      if (!data) return;
 
       // Update mode indicator based on ACTUAL bot mode
-      if (data.mode) {
-        updateModeIndicator(data.mode);
+      if (symbolData.mode) {
+        updateModeIndicator(symbolData.mode);
       }
 
       const isLong = currentStrategy === 'LONG';
       
-      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => currentSymbol.includes(s));
+      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => currentSymbol.includes(s));
       const currency = isIndian ? 'INR' : 'USDT';
       
       // 1. FSM State
@@ -502,7 +504,7 @@
       document.getElementById('posTitle').innerText = posTitleText;
       document.getElementById('posSize').innerText = pos ? pos.qty : 'None';
       document.getElementById('posEntry').innerText = pos ? pos.entryPrice.toFixed(2) : '-';
-      const activeInstrument = isLong ? data.signalSymbolBuy : data.signalSymbolSell;
+      const activeInstrument = isLong ? symbolData.signalSymbolBuy : symbolData.signalSymbolSell;
       const displayPrice = activeInstrument?.ltp ?? data.pnl.lastPrice;
       document.getElementById('lastPrice').innerText =
         typeof displayPrice === 'number'
@@ -514,12 +516,15 @@
         (isIndian ? currentSymbol + ' (index)' : currentSymbol);
       signalNameEl.innerText = symbolLabel;
       const posModeEl = document.getElementById('posMode');
-      if (pnlPosition && pnlPosition.qty > 0) {
+      if (currentMode === 'LIVE') {
+        posModeEl.innerText = 'LIVE';
+        posModeEl.style.color = '#3fb950';
+      } else if (pnlPosition && pnlPosition.qty > 0) {
         const modeLabel = pnlPosition.mode || 'PAPER';
         posModeEl.innerText = modeLabel;
-        posModeEl.style.color = modeLabel === 'LIVE' ? '#3fb950' : 'var(--text-secondary)';
+        posModeEl.style.color = 'var(--text-secondary)';
       } else {
-        posModeEl.innerText = pos && pos.qty > 0 ? 'PAPER' : '-';
+        posModeEl.innerText = '-';
         posModeEl.style.color = 'var(--text-secondary)';
       }
       
@@ -548,69 +553,46 @@
       }
       document.getElementById('perfTitle').innerText = perfTitleText;
 
-      if (currentMode === 'LIVE') {
-        // In LIVE mode, show Live Stats
-        const livePnl = data.pnl.liveStats ? data.pnl.liveStats.realizedPnl : 0;
-        const liveTrades = data.pnl.liveStats ? data.pnl.liveStats.tradeCount : 0;
+      if (isLong) {
+        document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
+        document.getElementById('strategyTrades').innerText = longTrades;
         
-        document.getElementById('strategyPnl').innerText = '-'; // Strategy split not available for Live yet
-        document.getElementById('strategyTrades').innerText = '-';
-        
-        document.getElementById('totalPnl').innerText = livePnl.toFixed(2) + ' ' + currency;
-        document.getElementById('totalPnl').style.color = livePnl >= 0 ? '#3fb950' : '#f85149';
-        
-        document.getElementById('tradeCount').innerText = liveTrades;
-        document.getElementById('winRate').innerText = '-'; // Win rate not calculated for Live yet
+        const sessionPnl = longPnl + unrealized;
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
       } else {
-        // In PAPER mode, show existing logic
-        if (isLong) {
-          document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' ' + currency;
-          document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
-          document.getElementById('strategyTrades').innerText = longTrades;
-          
-          // Session PnL = Realized (Long) + Unrealized (Long)
-          const sessionPnl = longPnl + unrealized;
-          document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
-          document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
-        } else {
-          document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' ' + currency;
-          document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
-          document.getElementById('strategyTrades').innerText = shortTrades;
+        document.getElementById('strategyPnl').innerText = shortPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('strategyPnl').style.color = shortPnl >= 0 ? '#3fb950' : '#f85149';
+        document.getElementById('strategyTrades').innerText = shortTrades;
 
-          // Session PnL = Realized (Short) + Unrealized (Short)
-          const sessionPnl = shortPnl + unrealized;
-          document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
-          document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
-        }
-        
-        // Cumulative PnL (Long + Short) - Always visible
-        const cumulativePnl = data.pnl.totalPnl || 0;
-        document.getElementById('cumulativePnl').innerText = cumulativePnl.toFixed(2) + ' ' + currency;
-        document.getElementById('cumulativePnl').style.color = cumulativePnl >= 0 ? '#3fb950' : '#f85149';
-        
-        document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
-        document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
+        const sessionPnl = shortPnl + unrealized;
+        document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
+        document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
       }
+      
+      const cumulativePnl = data.pnl.totalPnl || 0;
+      document.getElementById('cumulativePnl').innerText = cumulativePnl.toFixed(2) + ' ' + currency;
+      document.getElementById('cumulativePnl').style.color = cumulativePnl >= 0 ? '#3fb950' : '#f85149';
+      
+      document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
+      document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
 
       // 5. Tables
       updateTables(data);
     }
 
-    function updateTables(data) {
+    function updateTables(modeData) {
       const isLong = currentStrategy === 'LONG';
       const targetSide = isLong ? 'BUY' : 'SELL';
 
-      // Trades - Filter by strategy (or side for legacy data)
+      // Trades - Filter by strategy
       const tbody = document.querySelector('#tradesTable tbody');
       tbody.innerHTML = '';
-      const allTrades = (data.pnl.trades || []).slice().reverse(); // Newest first
+      const allTrades = (modeData.pnl.trades || []).slice().reverse(); // Newest first
       
       const targetStrategy = isLong ? 'LONG' : 'SHORT';
       const filteredTrades = allTrades.filter(t => {
-        // Filter by Mode
-        if (t.mode && t.mode !== currentMode) return false;
-        if (!t.mode && currentMode === 'LIVE') return false; // Legacy trades are assumed PAPER
-
         if (t.strategy) return t.strategy === targetStrategy;
         // Fallback for legacy data
         return t.side === targetSide;
@@ -628,12 +610,12 @@
         tbody.innerHTML += row;
       });
       if (filteredTrades.length === 0) {
-        const pnlPos = isLong ? data.pnl.longPosition : data.pnl.shortPosition;
+        const pnlPos = isLong ? modeData.pnl.longPosition : modeData.pnl.shortPosition;
         let emptyMsg = currentMode === 'LIVE'
           ? 'No LIVE trades yet. Waiting for the first LIVE execution.'
           : 'No trades yet.';
-        if (currentMode === 'LIVE' && pnlPos && pnlPos.qty > 0 && (pnlPos.mode || 'PAPER') !== 'LIVE') {
-          emptyMsg = 'Current position was opened in PAPER before the auto-switch. Next LIVE trade will appear here.';
+        if (currentMode === 'LIVE' && pnlPos && pnlPos.qty > 0) {
+          emptyMsg = 'Current live session has no completed trades yet.';
         }
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: var(--text-secondary); font-style: italic;">${emptyMsg}</td></tr>`;
       }
@@ -641,10 +623,9 @@
       // Signals - Filter by side
       const sbody = document.querySelector('#signalsTable tbody');
       sbody.innerHTML = '';
-      const allSignals = (data.signalHistory || []); // Newest first usually
+      const allSignals = (modeData.signalHistory || []); // Newest first usually
       const filteredSignals = allSignals.filter(s => {
         if (s.side !== targetSide) return false;
-        if (currentMode === 'LIVE' && !s.isLive) return false;
         return true;
       });
       

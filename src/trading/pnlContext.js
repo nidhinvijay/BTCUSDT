@@ -71,7 +71,7 @@ export function createPnlContext({ symbol }) {
     // PnL percentage
     // For Indian indices, we align with the SmartBroker capital base (100,000)
     // For Crypto, we keep the default 1,000 assumption.
-    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => symbol.includes(s));
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
     const initialCapital = isIndian ? 100000 : 1000; 
     
     const pnlPercentage = (totalPnl / initialCapital) * 100;

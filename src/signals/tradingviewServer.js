@@ -10,7 +10,7 @@ let wssInstance = null;
 
 function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
   if (!rawSymbol) return null;
-  const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'];
+  const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX'];
   const cleaned = rawSymbol.toUpperCase();
   if (cleaned === baseSymbol) return null;
 
@@ -197,8 +197,8 @@ export function startTradingViewServer({ activeBots, logger }) {
     logger.info({ side, symbol, message }, "Received TradingView signal");
 
     // Emit BUY/SELL internally
-    if (side === "BUY") bot.signalBus.emitBuy();
-    if (side === "SELL") bot.signalBus.emitSell();
+    if (side === "BUY") bot.paper.signalBus.emitBuy();
+    if (side === "SELL") bot.paper.signalBus.emitSell();
 
     // Broadcast to Dashboard Clients
     if (wssInstance) {
@@ -233,7 +233,9 @@ export function startTradingViewServer({ activeBots, logger }) {
     const symbol = req.query.symbol || config.defaultSymbol;
     const bot = activeBots.get(symbol);
     if (bot) {
-      const closed = bot.fsm.manualCloseAll();
+      const closedPaper = bot.paper.fsm.manualCloseAll();
+      const closedLive = bot.live.fsm.manualCloseAll();
+      const closed = closedPaper || closedLive;
       res.json({ success: true, closed, symbol });
     } else {
       res.status(404).json({ error: "Bot not found" });

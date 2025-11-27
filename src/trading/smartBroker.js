@@ -14,7 +14,7 @@ export function createSmartBroker({ paperBroker, liveBroker, pnlContext, logger 
 
     // 1. Check Session Profit Target (Indian Indices Only)
     // If we hit the target, we STOP Live trading to lock in profits for the day.
-    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX', 'FINNIFTY'].some(s => symbol.includes(s));
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
 
     if (isIndian) {
       const targetAmount = CAPITAL_BASE * (PROFIT_TARGET_PERCENT / 100);

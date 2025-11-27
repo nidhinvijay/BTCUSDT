@@ -50,7 +50,8 @@ function triggerSymbolReset(symbol, bot) {
     logger.info(`[${symbol}] Initiating daily reset...`);
 
     // 1. Force Close Positions
-    bot.fsm.manualCloseAll();
+    bot.paper.fsm.manualCloseAll();
+    bot.live.fsm.manualCloseAll();
 
     // 2. Archive Data
     const filePath = path.resolve('data', `${symbol}.json`);
@@ -69,8 +70,10 @@ function triggerSymbolReset(symbol, bot) {
     }
 
     // 4. Reset Memory State (Soft Reset)
-    bot.pnlContext.reset();
-    bot.fsm.reset();
+    bot.paper.pnlContext.reset();
+    bot.live.pnlContext.reset();
+    bot.paper.fsm.reset();
+    bot.live.fsm.reset();
 
     logger.info(`[${symbol}] In-memory state reset. Ready for next session.`);
 

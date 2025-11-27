@@ -1,5 +1,10 @@
-export function createLiveController({ paperPnlContext, liveBot, logger }) {
-  let isLiveActive = false;
+export function createLiveController({ paperPnlContext, liveBot, logger, gateConfig = {} }) {
+  const { enabled = true, threshold = 0 } = gateConfig;
+  let isLiveActive = !enabled;
+
+  if (!enabled) {
+    logger.info('[LiveController] Gate disabled via config. LIVE bot always active.');
+  }
 
   const getTotalPnl = () => {
     const snapshot = paperPnlContext.getSnapshot();
@@ -9,13 +14,21 @@ export function createLiveController({ paperPnlContext, liveBot, logger }) {
   const activateLive = () => {
     if (isLiveActive) return;
     isLiveActive = true;
-    logger.info(`[LiveController] Paper PnL ${getTotalPnl().toFixed(2)} > 0. LIVE bot activated.`);
+    logger.info(
+      `[LiveController] Paper PnL ${getTotalPnl().toFixed(2)} > ${threshold.toFixed(
+        2
+      )}. LIVE bot activated.`
+    );
   };
 
   const deactivateLive = async () => {
     if (!isLiveActive) return;
     isLiveActive = false;
-    logger.info(`[LiveController] Paper PnL ${getTotalPnl().toFixed(2)} <= 0. LIVE bot paused & flattening.`);
+    logger.info(
+      `[LiveController] Paper PnL ${getTotalPnl().toFixed(2)} <= ${threshold.toFixed(
+        2
+      )}. LIVE bot paused & flattening.`
+    );
     try {
       liveBot.fsm.manualCloseAll();
       if (typeof liveBot.broker.closeAll === 'function') {
@@ -27,10 +40,16 @@ export function createLiveController({ paperPnlContext, liveBot, logger }) {
   };
 
   const evaluateGate = () => {
+    if (!enabled) {
+      if (!isLiveActive) {
+        isLiveActive = true;
+      }
+      return;
+    }
     const total = getTotalPnl();
-    if (total > 0 && !isLiveActive) {
+    if (total > threshold && !isLiveActive) {
       activateLive();
-    } else if (total <= 0 && isLiveActive) {
+    } else if (total <= threshold && isLiveActive) {
       deactivateLive();
     }
   };

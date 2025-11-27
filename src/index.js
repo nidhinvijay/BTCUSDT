@@ -107,7 +107,8 @@ async function main() {
     const liveController = createLiveController({
       paperPnlContext: paper.pnlContext,
       liveBot: live,
-      logger
+      logger,
+      gateConfig: config.liveGate
     });
 
     // 3. Resume State

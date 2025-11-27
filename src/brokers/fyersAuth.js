@@ -5,6 +5,43 @@ import fs from 'fs';
 import path from 'path';
 
 const TOKEN_FILE = path.resolve('data', 'fyers_token.json');
+const TOKEN_EXPIRY_BUFFER_MS = 2 * 60 * 1000; // refresh at least 2 minutes early
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+function decodeJwtExpiry(token, logger) {
+  if (!token) return 0;
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return 0;
+    const payload = JSON.parse(
+      Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+    );
+    if (typeof payload?.exp === 'number') {
+      return payload.exp * 1000;
+    }
+  } catch (error) {
+    logger?.warn?.({ error: error?.message || error }, 'Failed to decode FYERS token expiry');
+  }
+  return 0;
+}
+
+function nextIst9amUtc() {
+  const now = new Date();
+  const nowIST = new Date(now.getTime() + IST_OFFSET_MS);
+  const next9AM = new Date(nowIST);
+  next9AM.setHours(9, 0, 0, 0);
+  if (nowIST.getHours() >= 9) {
+    next9AM.setDate(next9AM.getDate() + 1);
+  }
+  return next9AM.getTime() - IST_OFFSET_MS;
+}
+
+function deriveExpiryUtc(accessToken, storedExpiry, logger) {
+  const jwtExpiry = decodeJwtExpiry(accessToken, logger);
+  const expiry = jwtExpiry || storedExpiry || nextIst9amUtc();
+  if (!expiry) return 0;
+  return Math.max(0, expiry - TOKEN_EXPIRY_BUFFER_MS);
+}
 
 export class FyersAuth {
   constructor({ appId, secretKey, redirectUri, pin, logger }) {
@@ -71,25 +108,12 @@ export class FyersAuth {
       if (response.data.code === 200 && response.data.s === 'ok') {
         this.accessToken = response.data.access_token;
         this.refreshToken = response.data.refresh_token;
-        
-        // Calculate next 9:00 AM IST (market open time when tokens expire)
-        const now = new Date();
-        const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
-        const nowIST = new Date(now.getTime() + istOffset);
-        const next9AM = new Date(nowIST);
-        next9AM.setHours(9, 0, 0, 0);
-        
-        // If it's already past 9 AM today, set to 9 AM tomorrow
-        if (nowIST.getHours() >= 9) {
-          next9AM.setDate(next9AM.getDate() + 1);
-        }
-        
-        const expiresAt = next9AM.getTime() - istOffset; // Convert back to UTC for storage
-        
+
+        this.expiresAt = deriveExpiryUtc(this.accessToken, null, this.logger);
         this.saveToken({
           accessToken: this.accessToken,
           refreshToken: this.refreshToken,
-          expiresAt: expiresAt,
+          expiresAt: this.expiresAt,
         });
 
         this.logger.info('✅ Fyers API v3 access token obtained successfully');
@@ -144,24 +168,12 @@ export class FyersAuth {
           this.refreshToken = response.data.refresh_token;
         }
 
-        // Calculate next 9:00 AM IST (market open time when tokens expire)
-        const now = new Date();
-        const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
-        const nowIST = new Date(now.getTime() + istOffset);
-        const next9AM = new Date(nowIST);
-        next9AM.setHours(9, 0, 0, 0);
-        
-        // If it's already past 9 AM today, set to 9 AM tomorrow
-        if (nowIST.getHours() >= 9) {
-          next9AM.setDate(next9AM.getDate() + 1);
-        }
-        
-        const expiresAt = next9AM.getTime() - istOffset; // Convert back to UTC for storage
+        this.expiresAt = deriveExpiryUtc(this.accessToken, null, this.logger);
 
         this.saveToken({
           accessToken: this.accessToken,
           refreshToken: this.refreshToken,
-          expiresAt: expiresAt,
+          expiresAt: this.expiresAt,
         });
 
         this.logger.info('✅ Token refreshed successfully');
@@ -193,7 +205,7 @@ export class FyersAuth {
 
         this.accessToken = tokenData.accessToken;
         this.refreshToken = tokenData.refreshToken;
-        this.expiresAt = tokenData.expiresAt || 0;
+        this.expiresAt = deriveExpiryUtc(this.accessToken, tokenData.expiresAt || 0, this.logger);
 
         // Check if token is still valid (not expired)
         if (this.expiresAt && Date.now() < this.expiresAt) {

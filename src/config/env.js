@@ -51,6 +51,17 @@ export const config = {
     SENSEX: 'fyers'
   },
 
+  liveGate: (() => {
+    const rawThreshold = parseFloat(process.env.LIVE_GATE_THRESHOLD ?? '0');
+    return {
+      enabled:
+        process.env.LIVE_GATE_ENABLED !== undefined
+          ? process.env.LIVE_GATE_ENABLED !== 'false'
+          : true,
+      threshold: Number.isFinite(rawThreshold) ? rawThreshold : 0,
+    };
+  })(),
+
   port: parseInt(process.env.PORT || '3000', 10),
   logLevel: process.env.LOG_LEVEL || 'info'
 };

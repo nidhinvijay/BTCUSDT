@@ -42,6 +42,10 @@ A robust paper trading engine designed for both Crypto (Binance) and Indian Indi
    FYERS_SECRET_KEY=your_secret_key
    FYERS_REDIRECT_URI=http://localhost:3000/fyers/callback
    FYERS_WS_LOG_PATH=./fyers-logs    # optional websocket log directory
+
+   # Live gate (paper -> live handoff)
+   LIVE_GATE_ENABLED=true            # set to false to keep LIVE stack always active
+   LIVE_GATE_THRESHOLD=0             # min cumulative paper PnL required to activate LIVE
    ```
 
 ## Usage
@@ -67,6 +71,13 @@ Access the dashboard at `http://localhost:3000`.
 - **Symbol Tabs**: Switch between active symbols (BTCUSDT, NIFTY, etc.).
 - **Strategy Tabs**: View independent states for LONG and SHORT strategies.
 - **Performance**: Track Realized/Unrealized PnL, Win Rate, and Trade History.
+
+### Live Gate (Paper → Live Relay)
+The live FSM only receives signals when the cumulative paper PnL is above a threshold (default `0`).  
+Use the new environment variables to adjust this behavior:
+- `LIVE_GATE_ENABLED=false` keeps the live stack active at all times (helpful for local testing).
+- `LIVE_GATE_THRESHOLD=-25` (example) requires paper to stay above -25 before forwarding signals.
+When the gate disables the live stack it also flattens any open live positions automatically.
 
 ## Deployment (VM)
 

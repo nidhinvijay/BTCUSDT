@@ -342,6 +342,17 @@
       updateDashboard();
     }
 
+    function updateModeIndicator(actualMode) {
+      // Update the tabs to reflect the ACTUAL bot mode (not just user selection)
+      if (actualMode === 'LIVE') {
+        document.getElementById('modeLive').style.backgroundColor = 'var(--success-color)';
+        document.getElementById('modeLive').style.color = 'white';
+      } else {
+        document.getElementById('modeLive').style.backgroundColor = '';
+        document.getElementById('modeLive').style.color = '';
+      }
+    }
+
     // WebSocket Connection
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(protocol + '//' + window.location.host);
@@ -391,6 +402,11 @@
     function updateDashboard() {
       if (!currentSymbol || !allData[currentSymbol]) return;
       const data = allData[currentSymbol];
+
+      // Update mode indicator based on ACTUAL bot mode
+      if (data.mode) {
+        updateModeIndicator(data.mode);
+      }
 
       const isLong = currentStrategy === 'LONG';
       

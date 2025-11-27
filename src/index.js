@@ -234,6 +234,7 @@ async function main() {
       signalBus,
       pnlContext,
       sessionManager,
+      smartBroker, // Added SmartBroker to access isLive()
       signalSymbolState,
       setInstrument,
     });
@@ -280,6 +281,7 @@ async function main() {
         buyState: bot.fsm.getBuyState(),
         sellState: bot.fsm.getSellState(),
         pnl: bot.pnlContext.getSnapshot(),
+        mode: bot.smartBroker.isLive() ? 'LIVE' : 'PAPER', // Send Mode
         // Add other needed data
         signalSymbolBuy: buyState,
         signalSymbolSell: sellState,
@@ -309,6 +311,7 @@ async function main() {
           buyState: bot.fsm.getBuyState(),
           sellState: bot.fsm.getSellState(),
           pnl: bot.pnlContext.getSnapshot(),
+          mode: bot.smartBroker.isLive() ? 'LIVE' : 'PAPER', // Send Mode
           anchors: bot.fsm.getAnchors(),
           signalHistory: bot.fsm.getSignalHistory(),
           longPosition: bot.fsm.getLongPosition(),

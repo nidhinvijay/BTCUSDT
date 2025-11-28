@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "NODE_ENV=development node src/index.js",
-    "auth": "node scripts/fyersSetup.js"
+    "auth": "node scripts/fyersSetup.js",
+    "test": "node --test tests/"
   },
   "dependencies": {
     "axios": "^1.7.0",

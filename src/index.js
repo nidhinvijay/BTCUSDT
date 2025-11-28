@@ -105,7 +105,7 @@ async function main() {
     });
 
     const liveController = createLiveController({
-      paperPnlContext: paper.pnlContext,
+      paperBot: paper,
       liveBot: live,
       logger,
       gateConfig: config.liveGate

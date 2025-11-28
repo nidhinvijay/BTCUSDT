@@ -53,6 +53,7 @@ export class FyersAuth {
     this.accessToken = null;
     this.refreshToken = null;
     this.expiresAt = 0;
+    this._refreshTimer = null;
 
     // Try to load existing token
     this.loadToken();
@@ -61,12 +62,15 @@ export class FyersAuth {
   // Initialize: Check expiry and refresh if needed
   async initialize() {
     if (this.isAuthenticated()) {
+      this._scheduleAutoRefresh();
       return true;
     }
 
     if (this.refreshToken) {
       this.logger.info('Access token expired, attempting refresh...');
-      return await this.refreshAccessToken();
+      const ok = await this.refreshAccessToken();
+      if (ok) this._scheduleAutoRefresh();
+      return ok;
     }
 
     return false;
@@ -115,6 +119,8 @@ export class FyersAuth {
           refreshToken: this.refreshToken,
           expiresAt: this.expiresAt,
         });
+
+        this._scheduleAutoRefresh();
 
         this.logger.info('✅ Fyers API v3 access token obtained successfully');
         return this.accessToken;
@@ -176,6 +182,8 @@ export class FyersAuth {
           expiresAt: this.expiresAt,
         });
 
+        this._scheduleAutoRefresh();
+
         this.logger.info('✅ Token refreshed successfully');
         return true;
       } else {
@@ -231,9 +239,51 @@ export class FyersAuth {
     return this.accessToken;
   }
 
+  getExpiry() {
+    return this.expiresAt;
+  }
+
+  _scheduleAutoRefresh() {
+    if (!this.refreshToken || !this.expiresAt) return;
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+
+    const now = Date.now();
+    // Aim to refresh 1 minute before calculated expiry; never wait less than 30 seconds.
+    let delay = this.expiresAt - now - 60 * 1000;
+    if (delay < 30 * 1000) {
+      delay = 30 * 1000;
+    }
+
+    this.logger.info(
+      { delaySeconds: Math.round(delay / 1000) },
+      'Scheduling FYERS token auto-refresh'
+    );
+
+    this._refreshTimer = setTimeout(async () => {
+      try {
+        const ok = await this.refreshAccessToken();
+        if (ok) {
+          this._scheduleAutoRefresh();
+        } else {
+          this.logger.error('Auto-refresh of FYERS token failed (refreshAccessToken returned false)');
+        }
+      } catch (error) {
+        this.logger.error({ error }, 'Auto-refresh of FYERS token threw an error');
+      }
+    }, delay);
+  }
+
   // Clear token
   clearToken() {
     this.accessToken = null;
+    this.expiresAt = 0;
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
     if (fs.existsSync(TOKEN_FILE)) {
       fs.unlinkSync(TOKEN_FILE);
     }

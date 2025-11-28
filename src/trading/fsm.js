@@ -581,37 +581,44 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   function onTick(tick) {
     // tick: { ltp, ts } ts = ms
     lastTick = tick;
+    const source = tick?.source || 'base';
+    const canProcessBuy = source === 'buy' || source === 'base';
+    const canProcessSell = source === 'sell' || source === 'base';
 
     // Process BUY FSM
-    switch (buyState) {
-      case STATES.BUYSIGNAL:
-        handleBuySignalTick(tick);
-        break;
-      case STATES.BUYENTRY_WINDOW:
-        handleBuyEntryWindowTick(tick);
-        break;
-      case STATES.BUYPROFIT_WINDOW:
-        handleBuyProfitWindowTick(tick);
-        break;
-      case STATES.WAIT_FOR_BUYENTRY:
-        handleWaitForBuyEntryTick(tick);
-        break;
+    if (canProcessBuy) {
+      switch (buyState) {
+        case STATES.BUYSIGNAL:
+          handleBuySignalTick(tick);
+          break;
+        case STATES.BUYENTRY_WINDOW:
+          handleBuyEntryWindowTick(tick);
+          break;
+        case STATES.BUYPROFIT_WINDOW:
+          handleBuyProfitWindowTick(tick);
+          break;
+        case STATES.WAIT_FOR_BUYENTRY:
+          handleWaitForBuyEntryTick(tick);
+          break;
+      }
     }
 
     // Process SELL FSM (independent)
-    switch (sellState) {
-      case STATES.SELLSIGNAL:
-        handleSellSignalTick(tick);
-        break;
-      case STATES.SELLENTRY_WINDOW:
-        handleSellEntryWindowTick(tick);
-        break;
-      case STATES.SELLPROFIT_WINDOW:
-        handleSellProfitWindowTick(tick);
-        break;
-      case STATES.WAIT_FOR_SELLENTRY:
-        handleWaitForSellEntryTick(tick);
-        break;
+    if (canProcessSell) {
+      switch (sellState) {
+        case STATES.SELLSIGNAL:
+          handleSellSignalTick(tick);
+          break;
+        case STATES.SELLENTRY_WINDOW:
+          handleSellEntryWindowTick(tick);
+          break;
+        case STATES.SELLPROFIT_WINDOW:
+          handleSellProfitWindowTick(tick);
+          break;
+        case STATES.WAIT_FOR_SELLENTRY:
+          handleWaitForSellEntryTick(tick);
+          break;
+      }
     }
 
     // Handle WAIT_WINDOW if either FSM uses it

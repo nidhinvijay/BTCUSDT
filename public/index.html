@@ -593,6 +593,8 @@
       
       const targetStrategy = isLong ? 'LONG' : 'SHORT';
       const filteredTrades = allTrades.filter(t => {
+        if (currentMode === 'PAPER' && t.mode === 'LIVE') return false;
+        if (currentMode === 'LIVE' && t.mode !== 'LIVE') return false;
         if (t.strategy) return t.strategy === targetStrategy;
         // Fallback for legacy data
         return t.side === targetSide;

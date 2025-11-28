@@ -1,4 +1,4 @@
-# Multi-Asset Paper Trading Bot (Dual FSM)
+# Multi-Asset Paper Trading Bot (Dual FSM)(HydraTrader)
 
 A robust paper trading engine designed for both Crypto (Binance) and Indian Indices (Fyers). It features a **Dual Finite State Machine (FSM)** architecture, allowing independent management of Long (BUY) and Short (SELL) strategies simultaneously.
 

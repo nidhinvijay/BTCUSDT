@@ -41,6 +41,7 @@ The test harness covers the critical logic of the trading system without connect
 - **Activation/Deactivation**: Verifies the gate logic based on Paper PnL threshold.
 - **Signal Forwarding**: Ensures signals only reach the Live bot when the gate is open.
 - **Position Promotion**: Verifies that profitable Paper positions are "promoted" to Live (via synthetic signals) when the gate opens.
+- **Corner Case**: Tests the scenario where Live deactivates (Paper PnL goes negative), a SELL signal arrives (only Paper takes it), then Paper becomes profitable again and Live reactivates with position promotion.
 
 ### 5. State Resumption (`tests/test_resumption.js`)
 - **Crash Recovery**: Verifies that if the bot restarts, it can correctly reload its state (e.g., remembering it has an active position) from the saved database.

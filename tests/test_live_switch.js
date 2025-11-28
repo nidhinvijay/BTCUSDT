@@ -130,4 +130,45 @@ test('LiveController Logic', async (t) => {
     assert.strictEqual(buySignalEmitted, true);
   });
 
+  await t.test('Scenario 5: Corner Case - Deactivation, SELL signal, then Reactivation', () => {
+    const paperBot = createMockBot();
+    const liveBot = createMockBot();
+    
+    const controller = createLiveController({
+      paperBot,
+      liveBot,
+      logger: mockLogger,
+      gateConfig: { enabled: true, threshold: 100 }
+    });
+
+    // 1. Start Live bot (PnL above threshold)
+    paperBot.pnlContext.setTotalPnl(150);
+    controller.onTick();
+    assert.strictEqual(controller.isLiveActive(), true);
+
+    // 2. Paper PnL goes negative -> Live deactivates
+    paperBot.pnlContext.setTotalPnl(-50);
+    controller.onTick();
+    assert.strictEqual(controller.isLiveActive(), false);
+
+    // 3. SELL signal comes (only Paper takes it, Live is inactive)
+    let sellSignalEmitted = false;
+    liveBot.signalBus.onSell(() => { sellSignalEmitted = true; });
+    
+    controller.forwardSignal('SELL');
+    assert.strictEqual(sellSignalEmitted, false); // Live didn't get it
+
+    // 4. Simulate Paper opening SHORT position (Entry: 100, Current: 95, Qty: 1)
+    paperBot.pnlContext.setLastPrice(95);
+    paperBot.fsm.shortPosition = { qty: 1, entryPrice: 100 };
+    
+    // 5. Paper SHORT becomes profitable -> PnL crosses threshold again
+    paperBot.pnlContext.setTotalPnl(150);
+    controller.onTick();
+
+    // 6. Live should reactivate AND promote the Paper SHORT
+    assert.strictEqual(controller.isLiveActive(), true);
+    assert.strictEqual(sellSignalEmitted, true); // Live got synthetic SELL to mirror paper
+  });
+
 });

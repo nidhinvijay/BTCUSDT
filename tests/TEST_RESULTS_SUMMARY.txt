@@ -22,6 +22,7 @@ We have successfully tested the "brain" of your trading bot to ensure it behaves
    - ✅ Activation: The Live bot correctly turns ON only when your Paper trading profit hits the target you set (e.g., $100).
    - ✅ Deactivation: The Live bot correctly turns OFF immediately if your Paper profit drops back below the target.
    - ✅ Protection: Signals are NOT sent to the Live bot unless it is active.
+   - ✅ Corner Case: If Live turns off, Paper takes a SHORT position, and Paper becomes profitable again, Live correctly reactivates and automatically mirrors the Paper position.
 
 5. CRASH RECOVERY
    - ✅ Memory: If the bot restarts or crashes, it "remembers" its open positions and continues managing them exactly where it left off.

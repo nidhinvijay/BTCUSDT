@@ -13,13 +13,13 @@ export function createPnlContext({ symbol }) {
   // Split Stats
   let longStats = { realizedPnl: 0, tradeCount: 0 };
   let shortStats = { realizedPnl: 0, tradeCount: 0 };
-  
+
   // Live Stats (Subset of trades executed in LIVE mode)
   let liveStats = { realizedPnl: 0, tradeCount: 0 };
 
   function getUnrealizedPnl() {
     if (lastPrice == null) return 0;
-    
+
     let longUpnl = 0;
     if (longPosition.qty > 0) {
       longUpnl = (lastPrice - longPosition.avgPrice) * longPosition.qty;
@@ -72,8 +72,8 @@ export function createPnlContext({ symbol }) {
     // For Indian indices, we align with the SmartBroker capital base (100,000)
     // For Crypto, we keep the default 1,000 assumption.
     const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
-    const initialCapital = isIndian ? 100000 : 1000; 
-    
+    const initialCapital = isIndian ? 100000 : 1000;
+
     const pnlPercentage = (totalPnl / initialCapital) * 100;
 
     return {
@@ -100,8 +100,8 @@ export function createPnlContext({ symbol }) {
       // We expose a summary "positionQty" for backward compatibility if needed,
       // but ideally consumers should check longPosition/shortPosition if they need details.
       // Net Position = Long - Short
-      positionQty: longPosition.qty - shortPosition.qty, 
-      
+      positionQty: longPosition.qty - shortPosition.qty,
+
       longPosition: { ...longPosition },
       shortPosition: { ...shortPosition },
 
@@ -136,7 +136,7 @@ export function createPnlContext({ symbol }) {
       // Net quantity
       return longPosition.qty - shortPosition.qty;
     },
-    
+
     // Helper to get specific side qty
     getLongQty() { return longPosition.qty; },
     getShortQty() { return shortPosition.qty; },
@@ -152,7 +152,7 @@ export function createPnlContext({ symbol }) {
 
     openPosition({ side, qty, price, mode = 'PAPER', meta = {} }) {
       // side: 'BUY' (Open Long) or 'SELL' (Open Short)
-      
+
       if (side === "BUY") {
         // OPEN LONG
         const totalCost = longPosition.avgPrice * longPosition.qty + price * qty;
@@ -206,10 +206,10 @@ export function createPnlContext({ symbol }) {
           console.warn("[PnL] Warning: Attempting to close LONG but no LONG position exists.");
           return snapshot();
         }
-        
+
         const closeQty = Math.min(qty, longPosition.qty);
         const pnl = (price - longPosition.avgPrice) * closeQty;
-        
+
         realizedPnl += pnl;
         longStats.realizedPnl += pnl;
         longStats.tradeCount += 1;
@@ -298,7 +298,7 @@ export function createPnlContext({ symbol }) {
 
     restoreState(state) {
       if (!state) return;
-      
+
       // Handle legacy state (single position) migration if needed
       if (state.positionQty !== undefined && state.longPosition === undefined) {
         // Legacy state detected. Try to map it.
@@ -333,13 +333,13 @@ export function createPnlContext({ symbol }) {
         trades.push(...state.trades);
       }
     },
-    
+
     reset() {
       // No accumulation to lifetime PnL
-      
+
       longPosition = { qty: 0, avgPrice: 0, mode: null };
       shortPosition = { qty: 0, avgPrice: 0, mode: null };
-      
+
       realizedPnl = 0;
       tradeCount = 0;
 

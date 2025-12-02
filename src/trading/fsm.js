@@ -242,14 +242,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     // New BUY signal received
     const source = payload.source || 'TradingView';
 
-    // 1. Check if we are already LONG. If so, force close to "Restart" logic.
+    // 1. Check if we are already LONG. If so, ignore per CE/PE spec.
     if (longIsOpen()) {
-      if (lastTick) {
-        logger.info({ source }, "New BUY signal received while LONG. Force closing old position.");
-        closeLong(lastTick.ltp, lastTick.ts, "SIGNAL_OVERRIDE");
-      } else {
-        logger.warn({ source }, "New BUY signal received while LONG, but no lastTick to close with. Position remains open (risky).");
-      }
+      logger.info({ source }, "BUY signal received while LONG is open - ignoring per spec.");
+      return;
     }
 
     // 2. Start fresh for the new signal
@@ -770,6 +766,44 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         waitForSellEntryStartTs = null;
       }
       return closed;
+    },
+    forceCloseLong: (reason = "FORCE_CLOSE") => {
+      if (!lastTick) {
+        logger.warn("Cannot close LONG: No tick data available");
+        return false;
+      }
+      if (!longIsOpen()) return false;
+      closeLong(lastTick.ltp, lastTick.ts, reason);
+      buyEntryWindowStartTs = null;
+      buyProfitWindowStartTs = null;
+      waitForBuyEntryStartTs = null;
+      waitForBuyEntryFirstTickSeen = false;
+      if (waitWindowSource && waitWindowSource.includes("BUY")) {
+        waitWindowStartTs = null;
+        waitWindowDurationMs = null;
+        waitWindowSource = null;
+      }
+      transitionTo("BUY", STATES.WAIT_FOR_SIGNAL);
+      return true;
+    },
+    forceCloseShort: (reason = "FORCE_CLOSE") => {
+      if (!lastTick) {
+        logger.warn("Cannot close SHORT: No tick data available");
+        return false;
+      }
+      if (!shortIsOpen()) return false;
+      closeShort(lastTick.ltp, lastTick.ts, reason);
+      sellEntryWindowStartTs = null;
+      sellProfitWindowStartTs = null;
+      waitForSellEntryStartTs = null;
+      waitForSellEntryFirstTickSeen = false;
+      if (waitWindowSource && waitWindowSource.includes("SELL")) {
+        waitWindowStartTs = null;
+        waitWindowDurationMs = null;
+        waitWindowSource = null;
+      }
+      transitionTo("SELL", STATES.WAIT_FOR_SIGNAL);
+      return true;
     },
     reset() {
       buyState = STATES.WAIT_FOR_SIGNAL;

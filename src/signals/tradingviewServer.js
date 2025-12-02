@@ -200,15 +200,61 @@ export function startTradingViewServer({ activeBots, logger }) {
 
     // Emit signals to Paper bot
     if (isIndianIndex && optionType) {
-      // For Indian index options: Route based on option type
+      const paperFsm = bot.paper?.fsm;
+      const controller = bot.controller;
+      const longPos = paperFsm ? paperFsm.getLongPosition() : null;
+      const shortPos = paperFsm ? paperFsm.getShortPosition() : null;
+
       if (optionType === 'CALL') {
-        // CALL option → CE side (emitBuy) - but pass original signal action
-        bot.paper.signalBus.emitBuy({ source: 'TradingView', action: side });
-        logger.info({ symbol, side, optionType }, "Routed to CE side");
+        let closed = false;
+        if (
+          side === 'SELL' &&
+          longPos &&
+          longPos.qty > 0 &&
+          typeof paperFsm.forceCloseLong === 'function'
+        ) {
+          closed = paperFsm.forceCloseLong("TV_SELL_EXIT");
+          if (closed) {
+            controller?.forwardSignal('SELL', {
+              source: 'SyntheticExit',
+              optionType: 'CALL',
+              symbol
+            });
+            logger.info({ symbol }, "Closed CE position on SELL signal");
+          }
+        }
+        bot.paper.signalBus.emitBuy({
+          source: 'TradingView',
+          action: side,
+          optionType
+        });
+        logger.info({ symbol, side, optionType, closed }, "CE signal routed to BUY FSM");
       } else if (optionType === 'PUT') {
-        // PUT option → PE side (emitSell) - but pass original signal action
-        bot.paper.signalBus.emitSell({ source: 'TradingView', action: side });
-        logger.info({ symbol, side, optionType }, "Routed to PE side");
+        let closed = false;
+        if (
+          side === 'SELL' &&
+          shortPos &&
+          shortPos.qty > 0 &&
+          typeof paperFsm.forceCloseShort === 'function'
+        ) {
+          closed = paperFsm.forceCloseShort("TV_SELL_EXIT");
+          if (closed) {
+            controller?.forwardSignal('SELL', {
+              source: 'SyntheticExit',
+              optionType: 'PUT',
+              symbol
+            });
+            logger.info({ symbol }, "Closed PE position on SELL signal");
+          }
+        } else if (side === 'SELL') {
+          logger.info({ symbol }, "PE SELL with no open position - treating as new entry");
+        }
+        bot.paper.signalBus.emitSell({
+          source: 'TradingView',
+          action: side,
+          optionType
+        });
+        logger.info({ symbol, side, optionType, closed }, "PE signal routed to SELL FSM");
       }
     } else {
       // For BTCUSDT or base index: Keep original logic

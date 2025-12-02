@@ -530,6 +530,10 @@
       let windowDuration = 60000;
       let windowLabel = '';
 
+      const waitWindows = data.waitWindows || {};
+      const buyWaitWindow = waitWindows.BUY || {};
+      const sellWaitWindow = waitWindows.SELL || {};
+
       if (isLong) {
         if (state === 'BUYENTRY_WINDOW' && data.buyEntryWindowStartTs) {
           windowStartTs = data.buyEntryWindowStartTs;
@@ -540,9 +544,16 @@
         } else if (state === 'WAIT_FOR_BUYENTRY' && data.waitForBuyEntryStartTs) {
           windowStartTs = data.waitForBuyEntryStartTs;
           windowLabel = '⏱️ Wait for Entry: ';
-        } else if (state === 'WAIT_WINDOW' && data.waitWindowSource && data.waitWindowSource.includes('BUY')) {
-          windowStartTs = data.waitWindowStartTs;
-          windowDuration = data.waitWindowDurationMs || 60000;
+        } else if (state === 'WAIT_WINDOW') {
+          const activeWindow = buyWaitWindow.startTs
+            ? buyWaitWindow
+            : (data.waitWindowSource && data.waitWindowSource.includes('BUY')
+              ? { startTs: data.waitWindowStartTs, durationMs: data.waitWindowDurationMs }
+              : null);
+          if (activeWindow && activeWindow.startTs) {
+            windowStartTs = activeWindow.startTs;
+            windowDuration = activeWindow.durationMs || 60000;
+          }
           windowLabel = '⏱️ Wait Window: ';
         }
       } else {
@@ -555,9 +566,16 @@
         } else if (state === 'WAIT_FOR_SELLENTRY' && data.waitForSellEntryStartTs) {
           windowStartTs = data.waitForSellEntryStartTs;
           windowLabel = '⏱️ Wait for Entry: ';
-        } else if (state === 'WAIT_WINDOW' && data.waitWindowSource && data.waitWindowSource.includes('SELL')) {
-          windowStartTs = data.waitWindowStartTs;
-          windowDuration = data.waitWindowDurationMs || 60000;
+        } else if (state === 'WAIT_WINDOW') {
+          const activeWindow = sellWaitWindow.startTs
+            ? sellWaitWindow
+            : (data.waitWindowSource && data.waitWindowSource.includes('SELL')
+              ? { startTs: data.waitWindowStartTs, durationMs: data.waitWindowDurationMs }
+              : null);
+          if (activeWindow && activeWindow.startTs) {
+            windowStartTs = activeWindow.startTs;
+            windowDuration = activeWindow.durationMs || 60000;
+          }
           windowLabel = '⏱️ Wait Window: ';
         }
       }
@@ -664,7 +682,7 @@
       document.getElementById('cumulativePnl').innerText = cumulativePnl.toFixed(2) + ' ' + currency;
       document.getElementById('cumulativePnl').style.color = cumulativePnl >= 0 ? '#3fb950' : '#f85149';
 
-      document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
+      document.getElementById('tradeCount').innerText = (longTrades + shortTrades);
       document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
 
       // 5. Tables

@@ -44,15 +44,17 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   // Timestamps and flags
   let lastTick = null;
-
+  let lastBuyTick = null;
+  let lastSellTick = null;
   let buyEntryWindowStartTs = null;
   let sellEntryWindowStartTs = null;
   let buyProfitWindowStartTs = null;
   let sellProfitWindowStartTs = null;
 
-  let waitWindowStartTs = null;
-  let waitWindowDurationMs = null;
-  let waitWindowSource = null; // 'BUYENTRY_WINDOW' | 'SELLENTRY_WINDOW' | 'BUYPROFIT_WINDOW' | 'SELLPROFIT_WINDOW'
+  const waitWindows = {
+    BUY: { startTs: null, durationMs: null, source: null },
+    SELL: { startTs: null, durationMs: null, source: null },
+  };
 
   let waitForBuyEntryStartTs = null;
   let waitForBuyEntryFirstTickSeen = false;
@@ -84,6 +86,13 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   function shortIsOpen() {
     return shortPosition && shortPosition.qty > 0;
+  }
+
+  function getLastSideTick(side) {
+    if (side === "BUY") {
+      return lastBuyTick || lastTick;
+    }
+    return lastSellTick || lastTick;
   }
 
   function computeOrderQty(price) {
@@ -204,25 +213,30 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   // --- WAIT_WINDOW helpers ---
 
-  function enterWaitWindow(remainingMs, source, tickTs) {
+  function resetWaitWindow(side) {
+    const slot = waitWindows[side];
+    slot.startTs = null;
+    slot.durationMs = null;
+    slot.source = null;
+  }
+
+  function enterWaitWindow(side, remainingMs, source, tickTs) {
     const duration = Math.max(0, remainingMs);
     if (duration <= 0) {
       // Immediately finish WAIT_WINDOW
-      finishWaitWindow(source, tickTs);
+      finishWaitWindow(side, source, tickTs);
       return;
     }
-    waitWindowStartTs = tickTs;
-    waitWindowDurationMs = duration;
-    waitWindowSource = source;
-    // Determine which FSM this WAIT_WINDOW belongs to based on source
-    const side = source.includes("BUY") ? "BUY" : "SELL";
+    const slot = waitWindows[side];
+    slot.startTs = tickTs;
+    slot.durationMs = duration;
+    slot.source = source;
     transitionTo(side, STATES.WAIT_WINDOW);
   }
 
-  function finishWaitWindow(nowStateSource, ts) {
+  function finishWaitWindow(side, nowStateSource, ts) {
     // Called when WAIT_WINDOW has fully elapsed (or immediately if remaining <= 0)
-    // Decide next state based on who called WAIT_WINDOW originally
-    const side = nowStateSource.includes("BUY") ? "BUY" : "SELL";
+    resetWaitWindow(side);
     switch (nowStateSource) {
       case "BUYENTRY_WINDOW": {
         // Go back to BUYENTRY_WINDOW with same anchors, and wait for first tick there
@@ -257,10 +271,6 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         transitionTo(side, STATES.WAIT_FOR_SIGNAL);
       }
     }
-    // Clear wait window meta
-    waitWindowStartTs = null;
-    waitWindowDurationMs = null;
-    waitWindowSource = null;
   }
 
   // --- Signal handlers ---
@@ -299,11 +309,12 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
     // 1. Check if we are already SHORT. If so, force close to "Restart" logic.
     if (shortIsOpen()) {
-      if (lastTick) {
+      const sellTick = getLastSideTick("SELL");
+      if (sellTick) {
         logger.info({ source }, "New SELL signal received while SHORT. Force closing old position.");
-        closeShort(lastTick.ltp, lastTick.ts, "SIGNAL_OVERRIDE");
+        closeShort(sellTick.ltp, sellTick.ts, "SIGNAL_OVERRIDE");
       } else {
-        logger.warn({ source }, "New SELL signal received while SHORT, but no lastTick to close with. Position remains open (risky).");
+        logger.warn({ source }, "New SELL signal received while SHORT, but no SELL tick to close with. Position remains open (risky).");
       }
     }
 
@@ -416,7 +427,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
           { ltp, buyEntryTrigger, remainingMs },
           "BUYENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to BUYENTRY_WINDOW"
         );
-        enterWaitWindow(remainingMs, "BUYENTRY_WINDOW", ts);
+        enterWaitWindow("BUY", remainingMs, "BUYENTRY_WINDOW", ts);
       }
     }
   }
@@ -457,7 +468,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
           { ltp, sellEntryTrigger, remainingMs },
           "SELLENTRY_WINDOW: entry not hit, entering WAIT_WINDOW then back to SELLENTRY_WINDOW"
         );
-        enterWaitWindow(remainingMs, "SELLENTRY_WINDOW", ts);
+        enterWaitWindow("SELL", remainingMs, "SELLENTRY_WINDOW", ts);
       }
     }
   }
@@ -479,7 +490,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         { ltp, stop, remainingMs },
         "BUYPROFIT_WINDOW: stop hit, entering WAIT_WINDOW then WAIT_FOR_BUYENTRY"
       );
-      enterWaitWindow(remainingMs, "BUYPROFIT_WINDOW", ts);
+      enterWaitWindow("BUY", remainingMs, "BUYPROFIT_WINDOW", ts);
       return;
     }
 
@@ -509,7 +520,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         { ltp, stop, remainingMs },
         "SELLPROFIT_WINDOW: stop hit, entering WAIT_WINDOW then WAIT_FOR_SELLENTRY"
       );
-      enterWaitWindow(remainingMs, "SELLPROFIT_WINDOW", ts);
+      enterWaitWindow("SELL", remainingMs, "SELLPROFIT_WINDOW", ts);
       return;
     }
 
@@ -522,22 +533,19 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   }
 
   // 3.8 WAIT_WINDOW
-  function handleWaitWindowTick(tick) {
-    if (!waitWindowStartTs || waitWindowDurationMs == null || !waitWindowSource)
-      return;
+  function handleWaitWindowTick(side, tick) {
+    const slot = waitWindows[side];
+    if (!slot.startTs || slot.durationMs == null || !slot.source) return;
     const { ts } = tick;
-    const elapsed = ts - waitWindowStartTs;
-    if (elapsed >= waitWindowDurationMs) {
+    const elapsed = ts - slot.startTs;
+    if (elapsed >= slot.durationMs) {
       logger.info(
-        { waitWindowSource },
+        { waitWindowSource: slot.source, side },
         "WAIT_WINDOW: duration completed, leaving WAIT_WINDOW"
       );
-      const source = waitWindowSource;
-      // Clear first to avoid recursion confusion
-      waitWindowStartTs = null;
-      waitWindowDurationMs = null;
-      waitWindowSource = null;
-      finishWaitWindow(source, ts);
+      const source = slot.source;
+      resetWaitWindow(side);
+      finishWaitWindow(side, source, ts);
     }
   }
 
@@ -620,6 +628,16 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     const canProcessBuy = source === 'buy' || source === 'base';
     const canProcessSell = source === 'sell' || source === 'base';
 
+    if (source === 'buy') {
+      lastBuyTick = tick;
+    } else if (source === 'sell') {
+      lastSellTick = tick;
+    } else if (!isIndianIndex) {
+      // Crypto/base instruments share the same feed for both sides
+      lastBuyTick = tick;
+      lastSellTick = tick;
+    }
+
     // Process BUY FSM
     if (canProcessBuy) {
       switch (buyState) {
@@ -657,8 +675,11 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     }
 
     // Handle WAIT_WINDOW if either FSM uses it
-    if (waitWindowSource) {
-      handleWaitWindowTick(tick);
+    if (waitWindows.BUY.source) {
+      handleWaitWindowTick("BUY", tick);
+    }
+    if (waitWindows.SELL.source) {
+      handleWaitWindowTick("SELL", tick);
     }
   }
 
@@ -691,9 +712,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       sellEntryWindowStartTs,
       buyProfitWindowStartTs,
       sellProfitWindowStartTs,
-      waitWindowStartTs,
-      waitWindowDurationMs,
-      waitWindowSource,
+      waitWindows: {
+        BUY: { ...waitWindows.BUY },
+        SELL: { ...waitWindows.SELL },
+      },
       waitForBuyEntryStartTs,
       waitForBuyEntryFirstTickSeen,
       waitForSellEntryStartTs,
@@ -733,9 +755,29 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     buyProfitWindowStartTs = state.buyProfitWindowStartTs;
     sellProfitWindowStartTs = state.sellProfitWindowStartTs;
 
-    waitWindowStartTs = state.waitWindowStartTs;
-    waitWindowDurationMs = state.waitWindowDurationMs;
-    waitWindowSource = state.waitWindowSource;
+    if (state.waitWindows && state.waitWindows.BUY) {
+      waitWindows.BUY.startTs = state.waitWindows.BUY.startTs ?? null;
+      waitWindows.BUY.durationMs = state.waitWindows.BUY.durationMs ?? null;
+      waitWindows.BUY.source = state.waitWindows.BUY.source ?? null;
+    } else if (state.waitWindowSource && state.waitWindowSource.includes("BUY")) {
+      waitWindows.BUY.startTs = state.waitWindowStartTs ?? null;
+      waitWindows.BUY.durationMs = state.waitWindowDurationMs ?? null;
+      waitWindows.BUY.source = state.waitWindowSource;
+    } else {
+      resetWaitWindow("BUY");
+    }
+
+    if (state.waitWindows && state.waitWindows.SELL) {
+      waitWindows.SELL.startTs = state.waitWindows.SELL.startTs ?? null;
+      waitWindows.SELL.durationMs = state.waitWindows.SELL.durationMs ?? null;
+      waitWindows.SELL.source = state.waitWindows.SELL.source ?? null;
+    } else if (state.waitWindowSource && state.waitWindowSource.includes("SELL")) {
+      waitWindows.SELL.startTs = state.waitWindowStartTs ?? null;
+      waitWindows.SELL.durationMs = state.waitWindowDurationMs ?? null;
+      waitWindows.SELL.source = state.waitWindowSource;
+    } else {
+      resetWaitWindow("SELL");
+    }
 
     waitForBuyEntryStartTs = state.waitForBuyEntryStartTs;
     waitForBuyEntryFirstTickSeen = state.waitForBuyEntryFirstTickSeen;
@@ -767,20 +809,25 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     getState,
     restoreState,
     manualCloseAll: () => {
-      if (!lastTick) {
-        logger.warn("Cannot manual close: No tick data available yet");
-        return false;
-      }
-      const { ltp, ts } = lastTick;
       let closed = false;
 
       if (longIsOpen()) {
-        closeLong(ltp, ts, "MANUAL_OVERRIDE");
-        closed = true;
+        const tick = getLastSideTick("BUY");
+        if (!tick) {
+          logger.warn("Cannot manual close LONG: No BUY tick data available");
+        } else {
+          closeLong(tick.ltp, tick.ts, "MANUAL_OVERRIDE");
+          closed = true;
+        }
       }
       if (shortIsOpen()) {
-        closeShort(ltp, ts, "MANUAL_OVERRIDE");
-        closed = true;
+        const tick = getLastSideTick("SELL");
+        if (!tick) {
+          logger.warn("Cannot manual close SHORT: No SELL tick data available");
+        } else {
+          closeShort(tick.ltp, tick.ts, "MANUAL_OVERRIDE");
+          closed = true;
+        }
       }
 
       // Reset states to WAIT_FOR_SIGNAL to stop any pending windows
@@ -792,47 +839,42 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
         sellEntryWindowStartTs = null;
         buyProfitWindowStartTs = null;
         sellProfitWindowStartTs = null;
-        waitWindowStartTs = null;
+        resetWaitWindow("BUY");
+        resetWaitWindow("SELL");
         waitForBuyEntryStartTs = null;
         waitForSellEntryStartTs = null;
       }
       return closed;
     },
     forceCloseLong: (reason = "FORCE_CLOSE") => {
-      if (!lastTick) {
-        logger.warn("Cannot close LONG: No tick data available");
+      if (!longIsOpen()) return false;
+      const tick = getLastSideTick("BUY");
+      if (!tick) {
+        logger.warn("Cannot close LONG: No BUY tick data available");
         return false;
       }
-      if (!longIsOpen()) return false;
-      closeLong(lastTick.ltp, lastTick.ts, reason);
+      closeLong(tick.ltp, tick.ts, reason);
       buyEntryWindowStartTs = null;
       buyProfitWindowStartTs = null;
       waitForBuyEntryStartTs = null;
       waitForBuyEntryFirstTickSeen = false;
-      if (waitWindowSource && waitWindowSource.includes("BUY")) {
-        waitWindowStartTs = null;
-        waitWindowDurationMs = null;
-        waitWindowSource = null;
-      }
+      resetWaitWindow("BUY");
       transitionTo("BUY", STATES.WAIT_FOR_SIGNAL);
       return true;
     },
     forceCloseShort: (reason = "FORCE_CLOSE") => {
-      if (!lastTick) {
-        logger.warn("Cannot close SHORT: No tick data available");
+      if (!shortIsOpen()) return false;
+      const tick = getLastSideTick("SELL");
+      if (!tick) {
+        logger.warn("Cannot close SHORT: No SELL tick data available");
         return false;
       }
-      if (!shortIsOpen()) return false;
-      closeShort(lastTick.ltp, lastTick.ts, reason);
+      closeShort(tick.ltp, tick.ts, reason);
       sellEntryWindowStartTs = null;
       sellProfitWindowStartTs = null;
       waitForSellEntryStartTs = null;
       waitForSellEntryFirstTickSeen = false;
-      if (waitWindowSource && waitWindowSource.includes("SELL")) {
-        waitWindowStartTs = null;
-        waitWindowDurationMs = null;
-        waitWindowSource = null;
-      }
+      resetWaitWindow("SELL");
       transitionTo("SELL", STATES.WAIT_FOR_SIGNAL);
       return true;
     },
@@ -849,13 +891,14 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       shortPosition = null;
       signalHistory.length = 0;
       lastTick = null;
+      lastBuyTick = null;
+      lastSellTick = null;
       buyEntryWindowStartTs = null;
       sellEntryWindowStartTs = null;
       buyProfitWindowStartTs = null;
       sellProfitWindowStartTs = null;
-      waitWindowStartTs = null;
-      waitWindowDurationMs = null;
-      waitWindowSource = null;
+      resetWaitWindow("BUY");
+      resetWaitWindow("SELL");
       waitForBuyEntryStartTs = null;
       waitForBuyEntryFirstTickSeen = false;
       waitForSellEntryStartTs = null;

@@ -10,7 +10,7 @@ import { createPaperBroker } from './trading/paperBroker.js';
 import { createLiveBroker } from './trading/liveBroker.js';
 import { createPnlContext } from './trading/pnlContext.js';
 import { startMarketStream } from './exchange/marketStream.js';
-import { upsertMachineState } from './utils/stateStore.js';
+import { upsertMachineState, readMachineState } from './utils/stateStore.js';
 import { resumeState } from './utils/resumer.js';
 import { createLiveCompositeBroker } from './trading/liveCompositeBroker.js';
 import { createLiveController } from './trading/liveController.js';
@@ -129,6 +129,27 @@ async function main() {
 
     if (resumeState({ paper, live }, symbol)) {
       logger.info(`[${symbol}] State resumed successfully.`);
+
+      // Restore option subscriptions if they exist in saved state
+      const savedState = readMachineState(symbol);
+      if (savedState?.signalSymbolState) {
+        if (savedState.signalSymbolState.buy?.fyersSymbol) {
+          signalSymbolState.buy.display = savedState.signalSymbolState.buy.display;
+          signalSymbolState.buy.fyersSymbol = savedState.signalSymbolState.buy.fyersSymbol;
+          logger.info(
+            { symbol: savedState.signalSymbolState.buy.display, fyersSymbol: savedState.signalSymbolState.buy.fyersSymbol },
+            '[State Resume] Restored BUY option subscription'
+          );
+        }
+        if (savedState.signalSymbolState.sell?.fyersSymbol) {
+          signalSymbolState.sell.display = savedState.signalSymbolState.sell.display;
+          signalSymbolState.sell.fyersSymbol = savedState.signalSymbolState.sell.fyersSymbol;
+          logger.info(
+            { symbol: savedState.signalSymbolState.sell.display, fyersSymbol: savedState.signalSymbolState.sell.fyersSymbol },
+            '[State Resume] Restored SELL option subscription'
+          );
+        }
+      }
     } else {
       logger.info(`[${symbol}] No saved state found, starting fresh.`);
     }
@@ -249,6 +270,33 @@ async function main() {
           },
           logger
         });
+
+        // Re-subscribe to saved option contracts after Fyers connection established
+        setTimeout(() => {
+          // Determine which side has an open position
+          const longPos = paper.fsm.getLongPosition();
+          const shortPos = paper.fsm.getShortPosition();
+
+          let activeSide = null;
+          if (longPos && longPos.qty > 0) {
+            activeSide = 'buy';
+          } else if (shortPos && shortPos.qty > 0) {
+            activeSide = 'sell';
+          }
+
+          // Only re-subscribe to the side with an open position
+          if (activeSide && signalSymbolState[activeSide]?.fyersSymbol) {
+            subscribeInstrument(activeSide, {
+              fyersSymbol: signalSymbolState[activeSide].fyersSymbol,
+              display: signalSymbolState[activeSide].display
+            });
+            priceFeed.active = activeSide;
+            logger.info(
+              { side: activeSide, fyersSymbol: signalSymbolState[activeSide].fyersSymbol },
+              '[State Resume] Re-subscribed to option contract for open position'
+            );
+          }
+        }, 2000); // Wait 2s for Fyers connection to establish
       } else {
         logger.warn(`[${symbol}] Skipping - Fyers token not available. Run: npm run auth`);
         continue; // Skip this symbol

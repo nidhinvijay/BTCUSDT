@@ -6,6 +6,12 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
   const paperPnlContext = paperBot.pnlContext;
   const paperFsm = paperBot.fsm;
 
+  // Track Paper window instances at deactivation to prevent immediate re-promotion
+  let lastDeactivationPaperWindows = {
+    buyProfitWindowStartTs: null,
+    sellProfitWindowStartTs: null
+  };
+
   if (!enabled) {
     logger.info('[LiveController] Gate disabled via config. LIVE bot always active.');
   }
@@ -44,22 +50,43 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
         shortPnl = realized + upnl;
       }
 
+      // Check if Paper is still in the same window instance as when we deactivated
+      const paperState = paperFsm.getState();
+      const longWindowSame = lastDeactivationPaperWindows.buyProfitWindowStartTs === paperState.buyProfitWindowStartTs;
+      const shortWindowSame = lastDeactivationPaperWindows.sellProfitWindowStartTs === paperState.sellProfitWindowStartTs;
+
       // Promote CE (LONG) if open, non-negative, and LIVE is flat on that side
       if (longPosPaper && longPosPaper.qty > 0 && longPnl >= 0 && (!longPosLive || longPosLive.qty <= 0)) {
-        logger.info(
-          { side: 'BUY', longPnl: longPnl.toFixed(2), lastPrice },
-          '[LiveController] Promoting PAPER LONG to LIVE via synthetic BUY signal'
-        );
-        liveBot.signalBus.emitBuy({ source: 'Synthetic' });
+        // Don't promote if we're still in the same window instance
+        if (longWindowSame && paperState.buyProfitWindowStartTs) {
+          logger.info(
+            { side: 'BUY', windowStartTs: paperState.buyProfitWindowStartTs },
+            '[LiveController] Skipping LONG promotion - still in same Paper profit window'
+          );
+        } else {
+          logger.info(
+            { side: 'BUY', longPnl: longPnl.toFixed(2), lastPrice },
+            '[LiveController] Promoting PAPER LONG to LIVE via synthetic BUY signal'
+          );
+          liveBot.signalBus.emitBuy({ source: 'Synthetic' });
+        }
       }
 
       // Promote PE (SHORT) if open, non-negative, and LIVE is flat on that side
       if (shortPosPaper && shortPosPaper.qty > 0 && shortPnl >= 0 && (!shortPosLive || shortPosLive.qty <= 0)) {
-        logger.info(
-          { side: 'SELL', shortPnl: shortPnl.toFixed(2), lastPrice },
-          '[LiveController] Promoting PAPER SHORT to LIVE via synthetic SELL signal'
-        );
-        liveBot.signalBus.emitSell({ source: 'Synthetic' });
+        // Don't promote if we're still in the same window instance
+        if (shortWindowSame && paperState.sellProfitWindowStartTs) {
+          logger.info(
+            { side: 'SELL', windowStartTs: paperState.sellProfitWindowStartTs },
+            '[LiveController] Skipping SHORT promotion - still in same Paper profit window'
+          );
+        } else {
+          logger.info(
+            { side: 'SELL', shortPnl: shortPnl.toFixed(2), lastPrice },
+            '[LiveController] Promoting PAPER SHORT to LIVE via synthetic SELL signal'
+          );
+          liveBot.signalBus.emitSell({ source: 'Synthetic' });
+        }
       }
     } catch (err) {
       logger.error({ err }, '[LiveController] Failed during LIVE promotion from PAPER');
@@ -82,6 +109,14 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
   const deactivateLive = async () => {
     if (!isLiveActive) return;
     isLiveActive = false;
+
+    // Store current Paper window timestamps to prevent re-promotion during same window
+    const paperState = paperFsm.getState();
+    lastDeactivationPaperWindows = {
+      buyProfitWindowStartTs: paperState.buyProfitWindowStartTs,
+      sellProfitWindowStartTs: paperState.sellProfitWindowStartTs
+    };
+
     logger.info(
       `[LiveController] Paper PnL ${getTotalPnl().toFixed(2)} <= ${threshold.toFixed(
         2

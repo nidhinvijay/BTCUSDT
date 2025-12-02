@@ -749,26 +749,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
       if (longIsOpen()) {
         closeLong(ltp, ts, "MANUAL_OVERRIDE");
-        // Record synthetic SELL signal for history visibility
-        signalHistory.unshift({
-          ts: Date.now(),
-          side: "SELL",
-          state: STATES.WAIT_FOR_SIGNAL,
-          isLive: typeof broker.isLive === 'function' ? broker.isLive() : false,
-          source: 'System Exit'
-        });
         closed = true;
       }
       if (shortIsOpen()) {
         closeShort(ltp, ts, "MANUAL_OVERRIDE");
-        // Record synthetic BUY signal for history visibility
-        signalHistory.unshift({
-          ts: Date.now(),
-          side: "BUY",
-          state: STATES.WAIT_FOR_SIGNAL,
-          isLive: typeof broker.isLive === 'function' ? broker.isLive() : false,
-          source: 'System Exit'
-        });
         closed = true;
       }
 

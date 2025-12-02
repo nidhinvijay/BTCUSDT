@@ -183,10 +183,9 @@ export function startTradingViewServer({ activeBots, logger }) {
     }
 
     if (optionType) {
-      // For index options:
-      // - CALL (C/CE) drives CE (long) strategy  -> BUY
-      // - PUT  (P/PE) drives PE (short) strategy -> SELL
-      side = optionType === 'PUT' ? 'SELL' : 'BUY';
+      // For index options, don't override the signal
+      // Just track the option type for routing later
+      logger.info({ optionType }, "Detected option type");
     }
 
     if (!side) {
@@ -194,11 +193,28 @@ export function startTradingViewServer({ activeBots, logger }) {
       return res.status(400).json({ error: "Unknown message format" });
     }
 
-    logger.info({ side, symbol, message }, "Received TradingView signal");
+    logger.info({ side, symbol, message, optionType }, "Received TradingView signal");
 
-    // Emit BUY/SELL internally
-    if (side === "BUY") bot.paper.signalBus.emitBuy({ source: 'TradingView' });
-    if (side === "SELL") bot.paper.signalBus.emitSell({ source: 'TradingView' });
+    // Determine if this is an Indian index
+    const isIndianIndex = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(idx => symbol.includes(idx));
+
+    // Emit signals to Paper bot
+    if (isIndianIndex && optionType) {
+      // For Indian index options: Route based on option type
+      if (optionType === 'CALL') {
+        // CALL option → CE side (emitBuy) - but pass original signal action
+        bot.paper.signalBus.emitBuy({ source: 'TradingView', action: side });
+        logger.info({ symbol, side, optionType }, "Routed to CE side");
+      } else if (optionType === 'PUT') {
+        // PUT option → PE side (emitSell) - but pass original signal action
+        bot.paper.signalBus.emitSell({ source: 'TradingView', action: side });
+        logger.info({ symbol, side, optionType }, "Routed to PE side");
+      }
+    } else {
+      // For BTCUSDT or base index: Keep original logic
+      if (side === "BUY") bot.paper.signalBus.emitBuy({ source: 'TradingView' });
+      if (side === "SELL") bot.paper.signalBus.emitSell({ source: 'TradingView' });
+    }
 
     // Broadcast to Dashboard Clients
     if (wssInstance) {

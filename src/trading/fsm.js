@@ -266,8 +266,9 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   // --- Signal handlers ---
 
   function onBuySignal(payload = {}) {
-    // New BUY signal received
+    // New BUY signal received (TradingView side may be BUY/SELL in payload.action)
     const source = payload.source || 'TradingView';
+    const tvSide = payload.action || 'BUY';
 
     // 1. Check if we are already LONG. If so, ignore per CE/PE spec.
     if (longIsOpen()) {
@@ -281,7 +282,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     const isLive = typeof broker.isLive === 'function' ? broker.isLive() : false;
     signalHistory.unshift({
       ts: Date.now(),
-      side: "BUY",
+      side: tvSide,
       state: buyState,
       isLive,
       source
@@ -293,6 +294,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   function onSellSignal(payload = {}) {
     // New SELL signal received
     const source = payload.source || 'TradingView';
+    const tvSide = payload.action || 'SELL';
 
     // 1. Check if we are already SHORT. If so, force close to "Restart" logic.
     if (shortIsOpen()) {
@@ -310,7 +312,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     const isLive = typeof broker.isLive === 'function' ? broker.isLive() : false;
     signalHistory.unshift({
       ts: Date.now(),
-      side: "SELL",
+      side: tvSide,
       state: sellState,
       isLive,
       source

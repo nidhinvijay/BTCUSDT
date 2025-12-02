@@ -17,6 +17,8 @@ export function createPnlContext({ symbol }) {
   // Live Stats (Subset of trades executed in LIVE mode)
   let liveStats = { realizedPnl: 0, tradeCount: 0 };
 
+  const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
+
   function getUnrealizedPnl() {
     if (lastPrice == null) return 0;
 
@@ -27,7 +29,12 @@ export function createPnlContext({ symbol }) {
 
     let shortUpnl = 0;
     if (shortPosition.qty > 0) {
-      shortUpnl = (shortPosition.avgPrice - lastPrice) * shortPosition.qty;
+      // For Indian indices, the "short" bucket represents PE long-only
+      if (isIndian) {
+        shortUpnl = (lastPrice - shortPosition.avgPrice) * shortPosition.qty;
+      } else {
+        shortUpnl = (shortPosition.avgPrice - lastPrice) * shortPosition.qty;
+      }
     }
 
     return longUpnl + shortUpnl;
@@ -153,6 +160,32 @@ export function createPnlContext({ symbol }) {
     openPosition({ side, qty, price, mode = 'PAPER', meta = {} }) {
       // side: 'BUY' (Open Long) or 'SELL' (Open Short)
 
+      const leg = meta.leg;
+      const isIndianPE = isIndian && leg === 'PE';
+
+      if (isIndianPE) {
+        // Indian PE: long-only, but stored in shortPosition bucket
+        const totalCost = shortPosition.avgPrice * shortPosition.qty + price * qty;
+        shortPosition.qty += qty;
+        shortPosition.avgPrice = shortPosition.qty > 0 ? totalCost / shortPosition.qty : 0;
+        shortPosition.mode = mode;
+
+        tradeCount += 1;
+        if (mode === 'LIVE') liveStats.tradeCount += 1;
+
+        trades.push({
+          ts: Date.now(),
+          type: "OPEN",
+          side: "BUY",
+          qty,
+          price,
+          strategy: "SHORT",
+          mode,
+          meta,
+        });
+        return snapshot();
+      }
+
       if (side === "BUY") {
         // OPEN LONG
         const totalCost = longPosition.avgPrice * longPosition.qty + price * qty;
@@ -199,6 +232,51 @@ export function createPnlContext({ symbol }) {
 
     closePosition({ side, qty, price, mode = 'PAPER', meta = {} }) {
       // side: 'SELL' (Close Long) or 'BUY' (Close Short)
+
+      const leg = meta.leg;
+      const isIndianPE = isIndian && leg === 'PE';
+
+      if (isIndianPE) {
+        // Indian PE long: SELL to close
+        if (shortPosition.qty <= 0) {
+          console.warn("[PnL] Warning: Attempting to close PE LONG but no PE position exists.");
+          return snapshot();
+        }
+
+        const closeQty = Math.min(qty, shortPosition.qty);
+        const pnl = (price - shortPosition.avgPrice) * closeQty;
+
+        realizedPnl += pnl;
+        shortStats.realizedPnl += pnl;
+        shortStats.tradeCount += 1;
+
+        if (mode === 'LIVE') {
+          liveStats.realizedPnl += pnl;
+          liveStats.tradeCount += 1;
+        }
+
+        shortPosition.qty -= closeQty;
+        if (shortPosition.qty <= 0) {
+          shortPosition.qty = 0;
+          shortPosition.avgPrice = 0;
+          shortPosition.mode = null;
+        }
+
+        tradeCount += 1;
+        trades.push({
+          ts: Date.now(),
+          type: "CLOSE",
+          side: "SELL",
+          qty: closeQty,
+          price,
+          pnl,
+          strategy: "SHORT",
+          mode,
+          meta,
+        });
+
+        return snapshot();
+      }
 
       if (side === "SELL") {
         // CLOSE LONG

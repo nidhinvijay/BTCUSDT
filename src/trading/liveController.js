@@ -45,7 +45,12 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
 
       let shortPnl = 0;
       if (shortPosPaper && shortPosPaper.qty > 0) {
-        const upnl = (shortPosPaper.entryPrice - lastPrice) * shortPosPaper.qty;
+        const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some((s) =>
+          paperSnap.symbol.includes(s)
+        );
+        const upnl = isIndian
+          ? (lastPrice - shortPosPaper.entryPrice) * shortPosPaper.qty
+          : (shortPosPaper.entryPrice - lastPrice) * shortPosPaper.qty;
         const realized = paperSnap.shortStats ? paperSnap.shortStats.realizedPnl : 0;
         shortPnl = realized + upnl;
       }

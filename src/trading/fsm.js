@@ -23,6 +23,9 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   // --- DUAL FSM: One for BUY (LONG), one for SELL (SHORT) ---
   let buyState = STATES.WAIT_FOR_SIGNAL;
   let sellState = STATES.WAIT_FOR_SIGNAL;
+  const isIndianIndex = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some((s) =>
+    symbol.includes(s)
+  );
 
   // Anchors / triggers
   let savedBUYLTP = null;
@@ -139,13 +142,24 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       return;
     }
     const qty = computeOrderQty(price);
-    broker.placeLimitSell(qty, price, {
+    const meta = {
       symbol,
       ts,
-      reason: reason || "OPEN_SHORT",
-    });
-    shortPosition = { side: "SHORT", qty, entryPrice: price, stop: null };
-    logger.info({ price, qty }, "Opened SHORT position");
+      reason: reason || (isIndianIndex ? "OPEN_PE_LONG" : "OPEN_SHORT"),
+      leg: isIndianIndex ? "PE" : "SHORT",
+    };
+
+    if (isIndianIndex) {
+      // Indian index PUTs are traded long-only: BUY to open
+      broker.placeLimitBuy(qty, price, meta);
+      shortPosition = { side: "PE_LONG", qty, entryPrice: price, stop: null };
+      logger.info({ price, qty }, "Opened PE LONG position (Indian index)");
+    } else {
+      // Default: true SHORT
+      broker.placeLimitSell(qty, price, meta);
+      shortPosition = { side: "SHORT", qty, entryPrice: price, stop: null };
+      logger.info({ price, qty }, "Opened SHORT position");
+    }
   }
 
   function closeShort(price, ts, reason) {
@@ -156,12 +170,25 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       );
       return;
     }
-    broker.placeLimitBuy(shortPosition.qty, price, {
+
+    const meta = {
       symbol,
       ts,
-      reason: reason || "CLOSE_SHORT",
-    });
-    const pnl = (shortPosition.entryPrice - price) * shortPosition.qty;
+      reason: reason || (isIndianIndex ? "CLOSE_PE_LONG" : "CLOSE_SHORT"),
+      leg: isIndianIndex ? "PE" : "SHORT",
+    };
+
+    if (isIndianIndex) {
+      // Indian index PUTs: SELL to close long
+      broker.placeLimitSell(shortPosition.qty, price, meta);
+    } else {
+      // Default: BUY to close short
+      broker.placeLimitBuy(shortPosition.qty, price, meta);
+    }
+
+    const pnl = isIndianIndex
+      ? (price - shortPosition.entryPrice) * shortPosition.qty
+      : (shortPosition.entryPrice - price) * shortPosition.qty;
     logger.info(
       {
         closePrice: price,

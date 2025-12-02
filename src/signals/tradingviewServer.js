@@ -231,9 +231,6 @@ export function startTradingViewServer({ activeBots, logger }) {
         logger.info({ symbol, side, optionType, closed }, "CE signal routed to BUY FSM");
       } else if (optionType === 'PUT') {
         let closed = false;
-        let routedAsBuy = false;
-        let payload = { source: 'TradingView', action: side, optionType };
-
         if (
           side === 'SELL' &&
           shortPos &&
@@ -250,26 +247,15 @@ export function startTradingViewServer({ activeBots, logger }) {
             logger.info({ symbol }, "Closed PE position on SELL signal");
           }
         } else if (side === 'SELL') {
-          routedAsBuy = true;
-          payload = {
-            source: 'Synthetic',
-            action: 'BUY',
-            optionType,
-            routedFrom: 'PE_SELL_NO_POSITION'
-          };
-          logger.info({ symbol }, "PE SELL with no open position - emitting synthetic BUY");
+          logger.info({ symbol }, "PE SELL with no open position - treating as new entry");
         }
 
-        if (routedAsBuy) {
-          bot.paper.signalBus.emitBuy(payload);
-        } else {
-          bot.paper.signalBus.emitSell(payload);
-        }
-
-        logger.info(
-          { symbol, side, optionType, closed, routedAsBuy },
-          "PE signal processed"
-        );
+        bot.paper.signalBus.emitSell({
+          source: side === 'SELL' ? 'TradingView' : 'TradingView',
+          action: side,
+          optionType
+        });
+        logger.info({ symbol, side, optionType, closed }, "PE signal routed to SELL FSM");
       }
     } else {
       // For BTCUSDT or base index: Keep original logic

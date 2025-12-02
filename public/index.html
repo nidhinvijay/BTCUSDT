@@ -674,6 +674,7 @@
     function updateTables(modeData) {
       const isLong = currentStrategy === 'LONG';
       const targetSide = isLong ? 'BUY' : 'SELL';
+      const targetFsmSide = isLong ? 'BUY' : 'SELL';
 
       // Trades - Filter by strategy
       const tbody = document.querySelector('#tradesTable tbody');
@@ -716,8 +717,10 @@
       sbody.innerHTML = '';
       const allSignals = (modeData.signalHistory || []); // Newest first usually
       const filteredSignals = allSignals.filter(s => {
-        if (s.side !== targetSide) return false;
-        return true;
+        if (s.fsmSide) {
+          return s.fsmSide === targetFsmSide;
+        }
+        return s.side === targetSide;
       });
 
       filteredSignals.forEach(s => {

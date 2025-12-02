@@ -283,6 +283,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     signalHistory.unshift({
       ts: Date.now(),
       side: tvSide,
+      fsmSide: "BUY",
       state: buyState,
       isLive,
       source
@@ -313,6 +314,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     signalHistory.unshift({
       ts: Date.now(),
       side: tvSide,
+      fsmSide: "SELL",
       state: sellState,
       isLive,
       source

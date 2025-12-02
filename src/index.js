@@ -161,14 +161,14 @@ async function main() {
     }, 60000);
 
     // Immediate Save on Critical Events (Signals)
-    paper.signalBus.onBuy(() => {
+    paper.signalBus.onBuy((payload) => {
       logger.info(`[${symbol}] Immediate state save triggered by BUY signal`);
-      liveController.forwardSignal('BUY');
+      liveController.forwardSignal('BUY', payload);
       saveState();
     });
-    paper.signalBus.onSell(() => {
+    paper.signalBus.onSell((payload) => {
       logger.info(`[${symbol}] Immediate state save triggered by SELL signal`);
-      liveController.forwardSignal('SELL');
+      liveController.forwardSignal('SELL', payload);
       saveState();
     });
 
@@ -240,7 +240,7 @@ async function main() {
 
         startFyersStream({
           symbol,
-          accessToken: fyersAccessToken,
+          accessToken: () => fyersAuth.getToken(),
           appId: config.fyers.appId,
           onTick: (tick) => {
             if (priceFeed.active === 'base') {
@@ -269,7 +269,7 @@ async function main() {
         logger
       });
 
-      setInstrument = () => {};
+      setInstrument = () => { };
     }
 
     // Store in Map
@@ -318,17 +318,17 @@ async function main() {
     activeBots.forEach((bot, symbol) => {
       const buyState = bot.signalSymbolState?.buy?.fyersSymbol
         ? {
-            symbol: bot.signalSymbolState.buy.display,
-            fyersSymbol: bot.signalSymbolState.buy.fyersSymbol,
-            ltp: bot.signalSymbolState.buy.ltp,
-          }
+          symbol: bot.signalSymbolState.buy.display,
+          fyersSymbol: bot.signalSymbolState.buy.fyersSymbol,
+          ltp: bot.signalSymbolState.buy.ltp,
+        }
         : null;
       const sellState = bot.signalSymbolState?.sell?.fyersSymbol
         ? {
-            symbol: bot.signalSymbolState.sell.display,
-            fyersSymbol: bot.signalSymbolState.sell.fyersSymbol,
-            ltp: bot.signalSymbolState.sell.ltp,
-          }
+          symbol: bot.signalSymbolState.sell.display,
+          fyersSymbol: bot.signalSymbolState.sell.fyersSymbol,
+          ltp: bot.signalSymbolState.sell.ltp,
+        }
         : null;
       fullState[symbol] = {
         paper: buildPayload(bot.paper),
@@ -346,17 +346,17 @@ async function main() {
       activeBots.forEach((bot, symbol) => {
         const buyState = bot.signalSymbolState?.buy?.fyersSymbol
           ? {
-              symbol: bot.signalSymbolState.buy.display,
-              fyersSymbol: bot.signalSymbolState.buy.fyersSymbol,
-              ltp: bot.signalSymbolState.buy.ltp,
-            }
+            symbol: bot.signalSymbolState.buy.display,
+            fyersSymbol: bot.signalSymbolState.buy.fyersSymbol,
+            ltp: bot.signalSymbolState.buy.ltp,
+          }
           : null;
         const sellState = bot.signalSymbolState?.sell?.fyersSymbol
           ? {
-              symbol: bot.signalSymbolState.sell.display,
-              fyersSymbol: bot.signalSymbolState.sell.fyersSymbol,
-              ltp: bot.signalSymbolState.sell.ltp,
-            }
+            symbol: bot.signalSymbolState.sell.display,
+            fyersSymbol: bot.signalSymbolState.sell.fyersSymbol,
+            ltp: bot.signalSymbolState.sell.ltp,
+          }
           : null;
         updates[symbol] = {
           paper: buildPayload(bot.paper),

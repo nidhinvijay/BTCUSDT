@@ -238,15 +238,17 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   // --- Signal handlers ---
 
-  function onBuySignal() {
+  function onBuySignal(payload = {}) {
     // New BUY signal received
+    const source = payload.source || 'TradingView';
+
     // 1. Check if we are already LONG. If so, force close to "Restart" logic.
     if (longIsOpen()) {
       if (lastTick) {
-        logger.info("New BUY signal received while LONG. Force closing old position.");
+        logger.info({ source }, "New BUY signal received while LONG. Force closing old position.");
         closeLong(lastTick.ltp, lastTick.ts, "SIGNAL_OVERRIDE");
       } else {
-        logger.warn("New BUY signal received while LONG, but no lastTick to close with. Position remains open (risky).");
+        logger.warn({ source }, "New BUY signal received while LONG, but no lastTick to close with. Position remains open (risky).");
       }
     }
 
@@ -258,20 +260,24 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       ts: Date.now(),
       side: "BUY",
       state: buyState,
-      isLive
+      isLive,
+      source
     });
+    logger.info({ historySize: signalHistory.length, latest: signalHistory[0] }, "Added BUY signal to history");
     transitionTo("BUY", STATES.BUYSIGNAL);
   }
 
-  function onSellSignal() {
+  function onSellSignal(payload = {}) {
     // New SELL signal received
+    const source = payload.source || 'TradingView';
+
     // 1. Check if we are already SHORT. If so, force close to "Restart" logic.
     if (shortIsOpen()) {
       if (lastTick) {
-        logger.info("New SELL signal received while SHORT. Force closing old position.");
+        logger.info({ source }, "New SELL signal received while SHORT. Force closing old position.");
         closeShort(lastTick.ltp, lastTick.ts, "SIGNAL_OVERRIDE");
       } else {
-        logger.warn("New SELL signal received while SHORT, but no lastTick to close with. Position remains open (risky).");
+        logger.warn({ source }, "New SELL signal received while SHORT, but no lastTick to close with. Position remains open (risky).");
       }
     }
 
@@ -283,8 +289,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       ts: Date.now(),
       side: "SELL",
       state: sellState,
-      isLive
+      isLive,
+      source
     });
+    logger.info({ historySize: signalHistory.length, latest: signalHistory[0] }, "Added SELL signal to history");
     transitionTo("SELL", STATES.SELLSIGNAL);
   }
 
@@ -292,14 +300,14 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   function handleBuySignalTick(tick) {
     if (!buySignalFirstTickPending) return;
-    
+
     // For Indian indices, only accept ticks from option feed (not index)
     const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
     if (isIndian && tick.source === 'base') {
       // Ignore index ticks when waiting for option tick
       return;
     }
-    
+
     const { ltp, ts } = tick;
 
     savedBUYLTP = ltp;
@@ -320,7 +328,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
   function handleSellSignalTick(tick) {
     if (!sellSignalFirstTickPending) return;
-    
+
     // For Indian indices, only accept ticks from option feed (not index)
     const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
     if (isIndian && tick.source === 'base') {
@@ -690,6 +698,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     if (state.signalHistory) {
       signalHistory.length = 0;
       signalHistory.push(...state.signalHistory);
+      logger.info({ restoredCount: signalHistory.length }, "Restored signal history");
     }
 
     buyEntryWindowStartTs = state.buyEntryWindowStartTs;
@@ -740,10 +749,26 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
 
       if (longIsOpen()) {
         closeLong(ltp, ts, "MANUAL_OVERRIDE");
+        // Record synthetic SELL signal for history visibility
+        signalHistory.unshift({
+          ts: Date.now(),
+          side: "SELL",
+          state: STATES.WAIT_FOR_SIGNAL,
+          isLive: typeof broker.isLive === 'function' ? broker.isLive() : false,
+          source: 'System Exit'
+        });
         closed = true;
       }
       if (shortIsOpen()) {
         closeShort(ltp, ts, "MANUAL_OVERRIDE");
+        // Record synthetic BUY signal for history visibility
+        signalHistory.unshift({
+          ts: Date.now(),
+          side: "BUY",
+          state: STATES.WAIT_FOR_SIGNAL,
+          isLive: typeof broker.isLive === 'function' ? broker.isLive() : false,
+          source: 'System Exit'
+        });
         closed = true;
       }
 
@@ -790,7 +815,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       sellSignalFirstTickPending = false;
       buyEntryFirstTickPending = false;
       sellEntryFirstTickPending = false;
-      logger.info("FSM state reset to initial values.");
+      logger.info("FSM state reset to initial values. Signal history cleared.");
     }
   };
 }

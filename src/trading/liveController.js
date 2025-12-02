@@ -50,7 +50,7 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
           { side: 'BUY', longPnl: longPnl.toFixed(2), lastPrice },
           '[LiveController] Promoting PAPER LONG to LIVE via synthetic BUY signal'
         );
-        liveBot.signalBus.emitBuy();
+        liveBot.signalBus.emitBuy({ source: 'Synthetic' });
       }
 
       // Promote PE (SHORT) if open, non-negative, and LIVE is flat on that side
@@ -59,7 +59,7 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
           { side: 'SELL', shortPnl: shortPnl.toFixed(2), lastPrice },
           '[LiveController] Promoting PAPER SHORT to LIVE via synthetic SELL signal'
         );
-        liveBot.signalBus.emitSell();
+        liveBot.signalBus.emitSell({ source: 'Synthetic' });
       }
     } catch (err) {
       logger.error({ err }, '[LiveController] Failed during LIVE promotion from PAPER');
@@ -118,12 +118,12 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
     onTick() {
       evaluateGate();
     },
-    forwardSignal(side) {
+    forwardSignal(side, payload = {}) {
       if (!isLiveActive) return false;
       if (side === 'BUY') {
-        liveBot.signalBus.emitBuy();
+        liveBot.signalBus.emitBuy(payload);
       } else if (side === 'SELL') {
-        liveBot.signalBus.emitSell();
+        liveBot.signalBus.emitSell(payload);
       }
       return true;
     },

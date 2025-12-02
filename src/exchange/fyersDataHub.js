@@ -24,7 +24,14 @@ export async function ensureFyersHub({ appId, accessToken, logger }) {
   if (!accessToken) {
     throw new Error('FYERS access token missing');
   }
-  const wsToken = accessToken.includes(':') ? accessToken : `${appId}:${accessToken}`;
+
+  // Create a token provider that handles both string and function
+  const tokenProvider = async () => {
+    const rawToken = typeof accessToken === 'function' ? await accessToken() : accessToken;
+    if (!rawToken) return null;
+    return rawToken.includes(':') ? rawToken : `${appId}:${rawToken}`;
+  };
+
   const logBase = process.env.FYERS_WS_LOG_PATH
     ? path.resolve(process.env.FYERS_WS_LOG_PATH)
     : path.resolve('data', 'fyers-logs');
@@ -32,7 +39,7 @@ export async function ensureFyersHub({ appId, accessToken, logger }) {
   if (!connectionPromise) {
     fs.mkdirSync(logBase, { recursive: true });
     connectionPromise = connectFyersSocket({
-      token: wsToken,
+      token: tokenProvider,
       logPath: logBase,
       logger,
       onTick: handleTick,
@@ -43,7 +50,7 @@ export async function ensureFyersHub({ appId, accessToken, logger }) {
 }
 
 export function subscribeToSymbol(symbol, listener) {
-  if (!symbol) return () => {};
+  if (!symbol) return () => { };
   if (!listeners.has(symbol)) {
     listeners.set(symbol, new Set());
   }

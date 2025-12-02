@@ -33,7 +33,7 @@ function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
 
 function mapIndianOptionSymbol(symbol) {
   const raw = symbol.startsWith('NSE:') || symbol.startsWith('BSE:') ? symbol.slice(4) : symbol;
-  
+
   // Pattern: ROOT + YY + MM + DD + (C/P) + STRIKE
   const match = /^(NIFTY|BANKNIFTY|SENSEX|BSX)(\d{2})(\d{2})(\d{2})([CP])(\d+)$/.exec(raw);
   if (!match) {
@@ -45,10 +45,10 @@ function mapIndianOptionSymbol(symbol) {
   }
 
   const [, root, yy, mm, dd, cp, strikeRaw] = match;
-  
+
   // BSX (TradingView) maps to SENSEX (Fyers)
   const rootSymbol = (root === 'BSX') ? 'SENSEX' : root;
-  
+
   const cepe = cp === 'C' ? 'CE' : 'PE';
   const optionType = cepe === 'CE' ? 'CALL' : 'PUT';
 
@@ -81,7 +81,7 @@ function mapIndianOptionSymbol(symbol) {
     if (!monLetter) return null;
     expiryCode = `${yy}${monLetter}${dd}`; // Day included for NIFTY/SENSEX weekly
   }
-  
+
   // SENSEX options are on BSE, not NSE
   const exchange = rootSymbol === 'SENSEX' ? 'BSE' : 'NSE';
 
@@ -197,8 +197,8 @@ export function startTradingViewServer({ activeBots, logger }) {
     logger.info({ side, symbol, message }, "Received TradingView signal");
 
     // Emit BUY/SELL internally
-    if (side === "BUY") bot.paper.signalBus.emitBuy();
-    if (side === "SELL") bot.paper.signalBus.emitSell();
+    if (side === "BUY") bot.paper.signalBus.emitBuy({ source: 'TradingView' });
+    if (side === "SELL") bot.paper.signalBus.emitSell({ source: 'TradingView' });
 
     // Broadcast to Dashboard Clients
     if (wssInstance) {

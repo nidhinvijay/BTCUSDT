@@ -91,8 +91,8 @@ function handleIncomingMessage(message, logger) {
   const rows = Array.isArray(payload?.d)
     ? payload.d
     : Array.isArray(payload)
-    ? payload
-    : [payload];
+      ? payload
+      : [payload];
 
   for (const row of rows) {
     const v = row?.v ?? row;
@@ -128,7 +128,11 @@ export async function connectFyersSocket({ token, logPath, logger, onTick }) {
       connecting = false;
       throw new Error('fyers-api-v3 module not available');
     }
-    if (!token) {
+
+    // Resolve token if it's a function (dynamic provider)
+    const actualToken = typeof token === 'function' ? await token() : token;
+
+    if (!actualToken) {
       connecting = false;
       throw new Error('FYERS socket token missing');
     }
@@ -136,7 +140,7 @@ export async function connectFyersSocket({ token, logPath, logger, onTick }) {
       ? path.resolve(logPath)
       : path.resolve('data', 'fyers-logs');
 
-    socketInstance = DataSocket.getInstance(token, resolvedLogPath);
+    socketInstance = DataSocket.getInstance(actualToken, resolvedLogPath);
 
     socketInstance.on('connect', () => {
       connected = true;
@@ -188,7 +192,7 @@ export function subscribeSymbols(symbols = []) {
 
   if (!socketInstance || !connected) {
     if (!connecting && lastConnectOptions) {
-      connectFyersSocket(lastConnectOptions).catch(() => {});
+      connectFyersSocket(lastConnectOptions).catch(() => { });
     }
     return;
   }

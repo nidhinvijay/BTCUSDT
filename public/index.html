@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,7 +16,8 @@
       --danger-color: #da3633;
       --warning-color: #d29922;
       --border-color: #30363d;
-  }
+    }
+
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: var(--bg-color);
@@ -23,6 +25,7 @@
       margin: 0;
       padding: 6px;
     }
+
     .header {
       display: flex;
       justify-content: space-between;
@@ -31,6 +34,7 @@
       padding-bottom: 10px;
       border-bottom: 1px solid var(--border-color);
     }
+
     .status-badge {
       background-color: var(--success-color);
       color: white;
@@ -39,7 +43,7 @@
       font-size: 0.8em;
       font-weight: bold;
     }
-    
+
     /* Symbol Tabs */
     .symbol-tabs {
       display: flex;
@@ -47,6 +51,7 @@
       margin-bottom: 20px;
       overflow-x: auto;
     }
+
     .symbol-tab {
       background-color: var(--card-bg);
       border: 1px solid var(--border-color);
@@ -57,9 +62,11 @@
       font-weight: bold;
       transition: all 0.2s;
     }
+
     .symbol-tab:hover {
       background-color: #21262d;
     }
+
     .symbol-tab.active {
       background-color: var(--accent-color);
       color: white;
@@ -73,12 +80,14 @@
       margin-bottom: 15px;
       border-bottom: 1px solid var(--border-color);
     }
+
     .strategy-tab {
       padding: 8px 16px;
       cursor: pointer;
       color: var(--text-secondary);
       border-bottom: 2px solid transparent;
     }
+
     .strategy-tab.active {
       color: var(--text-primary);
       border-bottom-color: var(--accent-color);
@@ -90,12 +99,14 @@
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 20px;
     }
+
     .card {
       background-color: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 6px;
       padding: 20px;
     }
+
     .card h3 {
       margin-top: 0;
       font-size: 0.9em;
@@ -104,22 +115,37 @@
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 10px;
     }
+
     .stat-row {
       display: flex;
       justify-content: space-between;
       margin-bottom: 8px;
     }
-    .stat-label { color: var(--text-secondary); }
-    .stat-value { font-family: monospace; font-size: 1.1em; }
+
+    .stat-label {
+      color: var(--text-secondary);
+    }
+
+    .stat-value {
+      font-family: monospace;
+      font-size: 1.1em;
+    }
+
     .state-highlight {
       font-size: 1.5em;
       font-weight: bold;
       color: var(--accent-color);
       margin: 10px 0;
     }
-    .buy-color { color: #3fb950; }
-    .sell-color { color: #f85149; }
-    
+
+    .buy-color {
+      color: #3fb950;
+    }
+
+    .sell-color {
+      color: #f85149;
+    }
+
     .btn {
       background-color: var(--card-bg);
       border: 1px solid var(--border-color);
@@ -129,15 +155,38 @@
       cursor: pointer;
       margin-right: 10px;
     }
-    .btn-danger { background-color: #da3633; color: white; border: none; }
-    .btn:hover { opacity: 0.9; }
 
-    table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border-color); }
-    th { color: var(--text-secondary); }
-    
-    .hidden { display: none; }
-    
+    .btn-danger {
+      background-color: #da3633;
+      color: white;
+      border: none;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9em;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      color: var(--text-secondary);
+    }
+
+    .hidden {
+      display: none;
+    }
+
     /* Toast Notification */
     #toast-container {
       position: fixed;
@@ -145,6 +194,7 @@
       right: 20px;
       z-index: 1000;
     }
+
     .toast {
       background-color: var(--card-bg);
       border: 1px solid var(--accent-color);
@@ -152,26 +202,46 @@
       padding: 15px 20px;
       margin-top: 10px;
       border-radius: 6px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
       display: flex;
       align-items: center;
       gap: 10px;
       animation: slideIn 0.3s ease-out;
       min-width: 250px;
     }
-    .toast.buy { border-left: 5px solid #3fb950; }
-    .toast.sell { border-left: 5px solid #f85149; }
-    
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
+
+    .toast.buy {
+      border-left: 5px solid #3fb950;
     }
+
+    .toast.sell {
+      border-left: 5px solid #f85149;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
     @keyframes fadeOut {
-      from { opacity: 1; }
-      to { opacity: 0; }
+      from {
+        opacity: 1;
+      }
+
+      to {
+        opacity: 0;
+      }
     }
   </style>
 </head>
+
 <body>
   <div class="header">
     <div>
@@ -182,7 +252,7 @@
       <div class="status-badge">● Operational</div>
     </div>
   </div>
-  
+
   <div id="toast-container"></div>
 
   <!-- Symbol Navigation -->
@@ -214,14 +284,16 @@
     </div>
 
     <div class="dashboard-grid">
-      
+
       <!-- FSM State Card -->
       <div class="card">
         <h3 id="fsmTitle">FSM STATE</h3>
         <div id="fsmStateDisplay" class="state-highlight">WAITING...</div>
         <div class="stat-row"><span>Entry Trigger:</span> <span id="entryTrigger" class="stat-value">-</span></div>
         <div class="stat-row"><span>Stop Loss:</span> <span id="stopLoss" class="stat-value">-</span></div>
-        <div id="timerDisplay" style="margin-top: 15px; font-size: 1.3em; font-family: monospace; color: var(--warning-color); font-weight: bold;"></div>
+        <div id="timerDisplay"
+          style="margin-top: 15px; font-size: 1.3em; font-family: monospace; color: var(--warning-color); font-weight: bold;">
+        </div>
       </div>
 
       <!-- Position Card -->
@@ -238,10 +310,12 @@
       <!-- Performance Card -->
       <div class="card">
         <h3 id="perfTitle">LONG PERFORMANCE</h3>
-        <div class="stat-row"><span>Strategy PnL:</span> <span id="strategyPnl" class="stat-value">0.00 USDT</span></div>
+        <div class="stat-row"><span>Strategy PnL:</span> <span id="strategyPnl" class="stat-value">0.00 USDT</span>
+        </div>
         <div class="stat-row"><span>Strategy Trades:</span> <span id="strategyTrades" class="stat-value">0</span></div>
         <div class="stat-row"><span>Session PnL:</span> <span id="totalPnl" class="stat-value">0.00 USDT</span></div>
-        <div class="stat-row"><span>Cumulative PnL (Long+Short):</span> <span id="cumulativePnl" class="stat-value">0.00 USDT</span></div>
+        <div class="stat-row"><span>Cumulative PnL (Long+Short):</span> <span id="cumulativePnl" class="stat-value">0.00
+            USDT</span></div>
         <div class="stat-row"><span>Total Trades:</span> <span id="tradeCount" class="stat-value">0</span></div>
         <div class="stat-row"><span>Win Rate:</span> <span id="winRate" class="stat-value">0%</span></div>
       </div>
@@ -252,14 +326,29 @@
       <div class="card">
         <h3>Recent Trades</h3>
         <table id="tradesTable">
-          <thead><tr><th>Time</th><th>Type</th><th>Side</th><th>Qty</th><th>Price</th><th>PnL</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Side</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>PnL</th>
+            </tr>
+          </thead>
           <tbody></tbody>
         </table>
       </div>
       <div class="card">
         <h3>Signal History</h3>
         <table id="signalsTable">
-          <thead><tr><th>Time</th><th>Side</th><th>FSM State</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Side</th>
+              <th>FSM State</th>
+            </tr>
+          </thead>
           <tbody></tbody>
         </table>
       </div>
@@ -284,11 +373,11 @@
           // We wait for symbols to be populated
           const checkInterval = setInterval(() => {
             if (symbols.length > 0) {
-                const hasIndianIndices = symbols.some(s => ['NIFTY', 'BANKNIFTY', 'SENSEX'].includes(s));
-                if (hasIndianIndices) {
-                    document.getElementById('fyersAuthStatus').style.display = 'block';
-                }
-                clearInterval(checkInterval);
+              const hasIndianIndices = symbols.some(s => ['NIFTY', 'BANKNIFTY', 'SENSEX'].includes(s));
+              if (hasIndianIndices) {
+                document.getElementById('fyersAuthStatus').style.display = 'block';
+              }
+              clearInterval(checkInterval);
             }
           }, 500);
         }
@@ -300,14 +389,14 @@
     }
 
     function renderSymbolTabs() {
-        tabsContainer.innerHTML = '';
-        symbols.forEach(sym => {
-          const btn = document.createElement('div');
-          btn.className = 'symbol-tab' + (sym === currentSymbol ? ' active' : '');
-          btn.innerText = sym;
-          btn.onclick = () => switchSymbol(sym);
-          tabsContainer.appendChild(btn);
-        });
+      tabsContainer.innerHTML = '';
+      symbols.forEach(sym => {
+        const btn = document.createElement('div');
+        btn.className = 'symbol-tab' + (sym === currentSymbol ? ' active' : '');
+        btn.innerText = sym;
+        btn.onclick = () => switchSymbol(sym);
+        tabsContainer.appendChild(btn);
+      });
     }
 
     function switchSymbol(sym) {
@@ -315,7 +404,7 @@
       document.querySelectorAll('.symbol-tab').forEach(el => {
         el.classList.toggle('active', el.innerText === sym);
       });
-      
+
       // Update Tab Labels based on Symbol Type
       const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => sym.includes(s));
       if (isIndian) {
@@ -325,7 +414,7 @@
         document.getElementById('tabLong').innerText = 'LONG Strategy (BUY)';
         document.getElementById('tabShort').innerText = 'SHORT Strategy (SELL)';
       }
-      
+
       updateDashboard();
     }
 
@@ -363,13 +452,13 @@
       if (msg.type === 'INIT') {
         allData = msg.data;
         if (symbols.length === 0) {
-            symbols = Object.keys(allData);
-            if (!currentSymbol && symbols.length > 0) {
-                currentSymbol = symbols[0];
-            }
-            renderSymbolTabs();
-            // Initial switch to set labels
-            if (currentSymbol) switchSymbol(currentSymbol);
+          symbols = Object.keys(allData);
+          if (!currentSymbol && symbols.length > 0) {
+            currentSymbol = symbols[0];
+          }
+          renderSymbolTabs();
+          // Initial switch to set labels
+          if (currentSymbol) switchSymbol(currentSymbol);
         }
         updateDashboard();
       }
@@ -381,7 +470,7 @@
         showToast(msg.data);
       }
     };
-    
+
     function showToast(signal) {
       const container = document.getElementById('toast-container');
       const toast = document.createElement('div');
@@ -390,9 +479,9 @@
         <div style="font-weight: bold; font-size: 1.1em;">${signal.symbol} ${signal.side}</div>
         <div style="font-size: 0.9em; color: var(--text-secondary);">Signal Received</div>
       `;
-      
+
       container.appendChild(toast);
-      
+
       // Remove after 5 seconds
       setTimeout(() => {
         toast.style.animation = 'fadeOut 0.5s ease-out';
@@ -412,16 +501,16 @@
       }
 
       const isLong = currentStrategy === 'LONG';
-      
+
       const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => currentSymbol.includes(s));
       const currency = isIndian ? 'INR' : 'USDT';
-      
+
       // 1. FSM State
       const state = isLong ? data.buyState : data.sellState;
       const stateEl = document.getElementById('fsmStateDisplay');
       stateEl.innerText = state;
       stateEl.className = 'state-highlight ' + (isLong ? 'buy-color' : 'sell-color');
-      
+
       let fsmTitleText = '';
       if (isIndian) {
         fsmTitleText = isLong ? 'CE FSM STATE' : 'PE FSM STATE';
@@ -440,7 +529,7 @@
       let windowStartTs = null;
       let windowDuration = 60000;
       let windowLabel = '';
-      
+
       if (isLong) {
         if (state === 'BUYENTRY_WINDOW' && data.buyEntryWindowStartTs) {
           windowStartTs = data.buyEntryWindowStartTs;
@@ -472,7 +561,7 @@
           windowLabel = '⏱️ Wait Window: ';
         }
       }
-      
+
       if (windowStartTs) {
         const elapsed = Date.now() - windowStartTs;
         const remaining = Math.max(0, windowDuration - elapsed);
@@ -494,7 +583,7 @@
       // 3. Position
       const pos = isLong ? data.longPosition : data.shortPosition;
       const pnlPosition = isLong ? data.pnl.longPosition : data.pnl.shortPosition;
-      
+
       let posTitleText = '';
       if (isIndian) {
         posTitleText = isLong ? 'CE POSITION' : 'PE POSITION';
@@ -527,7 +616,7 @@
         posModeEl.innerText = '-';
         posModeEl.style.color = 'var(--text-secondary)';
       }
-      
+
       // Calculate Unrealized PnL for specific side
       let unrealized = 0;
       if (pos && data.pnl.lastPrice) {
@@ -543,7 +632,7 @@
       const shortPnl = data.pnl.shortStats ? data.pnl.shortStats.realizedPnl : 0;
       const longTrades = data.pnl.longStats ? data.pnl.longStats.tradeCount : 0;
       const shortTrades = data.pnl.shortStats ? data.pnl.shortStats.tradeCount : 0;
-      
+
       // Update title and strategy-specific metrics
       let perfTitleText = '';
       if (isIndian) {
@@ -557,7 +646,7 @@
         document.getElementById('strategyPnl').innerText = longPnl.toFixed(2) + ' ' + currency;
         document.getElementById('strategyPnl').style.color = longPnl >= 0 ? '#3fb950' : '#f85149';
         document.getElementById('strategyTrades').innerText = longTrades;
-        
+
         const sessionPnl = longPnl + unrealized;
         document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
         document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
@@ -570,11 +659,11 @@
         document.getElementById('totalPnl').innerText = sessionPnl.toFixed(2) + ' ' + currency;
         document.getElementById('totalPnl').style.color = sessionPnl >= 0 ? '#3fb950' : '#f85149';
       }
-      
+
       const cumulativePnl = data.pnl.totalPnl || 0;
       document.getElementById('cumulativePnl').innerText = cumulativePnl.toFixed(2) + ' ' + currency;
       document.getElementById('cumulativePnl').style.color = cumulativePnl >= 0 ? '#3fb950' : '#f85149';
-      
+
       document.getElementById('tradeCount').innerText = data.pnl.tradeCount;
       document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
 
@@ -590,7 +679,7 @@
       const tbody = document.querySelector('#tradesTable tbody');
       tbody.innerHTML = '';
       const allTrades = (modeData.pnl.trades || []).slice().reverse(); // Newest first
-      
+
       const targetStrategy = isLong ? 'LONG' : 'SHORT';
       const filteredTrades = allTrades.filter(t => {
         if (currentMode === 'PAPER' && t.mode === 'LIVE') return false;
@@ -599,7 +688,7 @@
         // Fallback for legacy data
         return t.side === targetSide;
       });
-      
+
       filteredTrades.forEach(t => {
         const row = `<tr>
           <td>${new Date(t.ts).toLocaleTimeString()}</td>
@@ -630,11 +719,12 @@
         if (s.side !== targetSide) return false;
         return true;
       });
-      
+
       filteredSignals.forEach(s => {
+        const sourceLabel = s.source === 'Synthetic' ? ' (Syn)' : (s.source === 'TradingView' ? ' (TV)' : '');
         const row = `<tr>
           <td>${new Date(s.ts).toLocaleTimeString()}</td>
-          <td class="${s.side === 'BUY' ? 'buy-color' : 'sell-color'}">${s.side}</td>
+          <td class="${s.side === 'BUY' ? 'buy-color' : 'sell-color'}">${s.side}${sourceLabel}</td>
           <td>${s.state}</td>
         </tr>`;
         sbody.innerHTML += row;
@@ -642,16 +732,17 @@
     }
 
     function closePositions() {
-      if(confirm('Close all positions for ' + currentSymbol + '?')) {
+      if (confirm('Close all positions for ' + currentSymbol + '?')) {
         fetch('/api/close?symbol=' + currentSymbol, { method: 'POST' });
       }
     }
 
     function resetSystem() {
-      if(confirm('RESET SYSTEM for ' + currentSymbol + '? This will archive data.')) {
+      if (confirm('RESET SYSTEM for ' + currentSymbol + '? This will archive data.')) {
         fetch('/api/reset?symbol=' + currentSymbol, { method: 'POST' });
       }
     }
   </script>
 </body>
+
 </html>

@@ -6,9 +6,19 @@ import { MockSignalBus, mockLogger } from './mocks.js';
 
 // Helper to create a mock bot stack
 function createMockBot() {
+  const fsmState = {
+    buyProfitWindowStartTs: null,
+    sellProfitWindowStartTs: null,
+  };
   return {
     pnlContext: {
-      snapshotData: { totalPnl: 0, lastPrice: 100, longStats: { realizedPnl: 0 }, shortStats: { realizedPnl: 0 } },
+      snapshotData: {
+        symbol: 'BTCUSDT',
+        totalPnl: 0,
+        lastPrice: 100,
+        longStats: { realizedPnl: 0 },
+        shortStats: { realizedPnl: 0 },
+      },
       getSnapshot() { return this.snapshotData; },
       setTotalPnl(pnl) { this.snapshotData.totalPnl = pnl; },
       setLastPrice(price) { this.snapshotData.lastPrice = price; }
@@ -18,7 +28,13 @@ function createMockBot() {
       shortPosition: null,
       getLongPosition() { return this.longPosition; },
       getShortPosition() { return this.shortPosition; },
-      manualCloseAll() {}
+      manualCloseAll() { return true; },
+      getState() {
+        return {
+          buyProfitWindowStartTs: fsmState.buyProfitWindowStartTs,
+          sellProfitWindowStartTs: fsmState.sellProfitWindowStartTs
+        };
+      }
     },
     signalBus: new MockSignalBus(),
     broker: {

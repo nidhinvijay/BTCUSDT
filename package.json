@@ -9,6 +9,7 @@
     "dev": "NODE_ENV=development node src/index.js",
     "auth": "node scripts/fyersSetup.js",
     "test": "node --test tests/*.js"
+    ,"sim": "node src/sim/index.js"
   },
   "dependencies": {
     "axios": "^1.7.0",

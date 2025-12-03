@@ -253,6 +253,76 @@
     </div>
   </div>
 
+  <!-- Simulation Controls (visible only when running sim server on port 3100) -->
+  <div id="simControls" class="card" style="max-width: 900px; margin-bottom: 12px; display: none; background: linear-gradient(135deg, #1a1f2e 0%, #161b22 100%); border: 2px solid var(--accent-color);">
+    <h3 style="color: var(--accent-color); display: flex; align-items: center; gap: 8px;">
+      Sim Tick Controls
+    </h3>
+    
+    <!-- Last Tick Display -->
+    <div style="background: var(--bg-color); padding: 10px; border-radius: 6px; margin-bottom: 12px; border-left: 3px solid var(--accent-color);">
+      <div style="font-size: 0.8em; color: var(--text-secondary); margin-bottom: 4px;">Last Tick</div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span style="color: var(--text-secondary); font-size: 0.9em;">Price:</span>
+          <span id="simLastPrice" style="font-family: monospace; font-size: 1.1em; color: var(--accent-color); margin-left: 6px;">-</span>
+        </div>
+        <div>
+          <span style="color: var(--text-secondary); font-size: 0.9em;">Feed:</span>
+          <span id="simLastFeed" style="font-family: monospace; font-size: 0.9em; color: var(--warning-color); margin-left: 6px;">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 Column Layout -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <!-- Left Column -->
+      <div>
+        <div class="stat-row">
+          <span>Symbol:</span>
+          <span><input id="simSymbolInput" style="width:100%; padding:6px 8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-weight: bold;" /></span>
+        </div>
+        <div class="stat-row">
+          <span>Feed:</span>
+          <span>
+            <select id="simSourceSelect" style="width:100%; padding:6px 8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-weight: bold;">
+              <option value="base">base (BTC/index)</option>
+              <option value="buy">buy (CE / long)</option>
+              <option value="sell">sell (PE / short)</option>
+            </select>
+          </span>
+        </div>
+      </div>
+
+      <!-- Right Column -->
+      <div>
+        <div class="stat-row">
+          <span>Next LTP:</span>
+          <span style="display:flex; gap:6px; align-items:center;">
+            <button class="btn" id="simLtpDown" type="button" style="font-size: 1.2em; padding: 6px 12px; background: var(--danger-color); color: white; border: none;">−</button>
+            <input id="simLtpInput" type="number" step="0.5" style="flex: 1; padding:6px 8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary); font-family: monospace; font-size: 1.1em; text-align: center; font-weight: bold;" />
+            <button class="btn" id="simLtpUp" type="button" style="font-size: 1.2em; padding: 6px 12px; background: var(--success-color); color: white; border: none;">+</button>
+          </span>
+        </div>
+        <div class="stat-row">
+          <span>Step:</span>
+          <span><input id="simStepInput" type="number" value="0.5" step="0.5" style="width:100%; padding:6px 8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);" /></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buttons (full width below columns) -->
+    <div style="margin-top:12px; display: flex; gap: 8px;">
+      <button class="btn" id="simUseLastPrice" type="button" style="flex: 1; background: var(--warning-color); color: white; border: none; padding: 8px;">
+        📋 Use Last Price
+      </button>
+      <button class="btn" id="simPushTick" type="button" style="flex: 2; background: var(--accent-color); color: white; border: none; padding: 8px; font-weight: bold;">
+        🚀 Push Tick
+      </button>
+    </div>
+    <div id="simStatus" style="margin-top:8px; font-size:0.85em; color:var(--text-secondary); min-height:1.2em; padding: 6px; background: var(--bg-color); border-radius: 4px;"></div>
+  </div>
+
   <div id="toast-container"></div>
 
   <!-- Symbol Navigation -->
@@ -471,6 +541,101 @@
       }
     };
 
+    // --- SIM TICK CONTROLS (SIM SERVER ONLY) ---
+    const isSimServer = window.location.port === '3100';
+    if (isSimServer) {
+      const simCard = document.getElementById('simControls');
+      if (simCard) {
+        simCard.style.display = 'block';
+      }
+
+      const simSymbolInput = document.getElementById('simSymbolInput');
+      const simLtpInput = document.getElementById('simLtpInput');
+      const simStepInput = document.getElementById('simStepInput');
+      const simSourceSelect = document.getElementById('simSourceSelect');
+      const simStatus = document.getElementById('simStatus');
+      const simLastPrice = document.getElementById('simLastPrice');
+      const simLastFeed = document.getElementById('simLastFeed');
+
+      // Track last tick for easier testing
+      let lastSimTick = { ltp: null, source: 'base' };
+
+      // Initialize symbol field when tabs are known
+      function syncSimSymbol() {
+        if (simSymbolInput && currentSymbol) {
+          simSymbolInput.value = currentSymbol;
+        }
+      }
+
+      // Hook into switchSymbol to keep sim symbol in sync
+      const originalSwitchSymbol = switchSymbol;
+      switchSymbol = function (sym) {
+        originalSwitchSymbol(sym);
+        syncSimSymbol();
+      };
+
+      function adjustSimLtp(direction) {
+        const step = parseFloat(simStepInput.value) || 0.5;
+        const current = parseFloat(simLtpInput.value) || 0;
+        const next = current + direction * step;
+        simLtpInput.value = next.toFixed(2);
+      }
+
+      document.getElementById('simLtpUp').onclick = () => adjustSimLtp(+1);
+      document.getElementById('simLtpDown').onclick = () => adjustSimLtp(-1);
+
+      // Use Last Price button
+      document.getElementById('simUseLastPrice').onclick = () => {
+        if (lastSimTick.ltp !== null) {
+          simLtpInput.value = lastSimTick.ltp.toFixed(2);
+          simSourceSelect.value = lastSimTick.source;
+          simStatus.textContent = `Loaded last tick: ${lastSimTick.ltp.toFixed(2)} (${lastSimTick.source})`;
+        } else {
+          simStatus.textContent = 'No previous tick to load';
+        }
+      };
+
+      document.getElementById('simPushTick').onclick = async () => {
+        const symbol = (simSymbolInput.value || currentSymbol || '').trim();
+        const ltp = parseFloat(simLtpInput.value);
+        const source = simSourceSelect.value;
+        if (!symbol) {
+          simStatus.textContent = '❌ Set a symbol first.';
+          return;
+        }
+        if (!Number.isFinite(ltp)) {
+          simStatus.textContent = '❌ Enter a valid LTP.';
+          return;
+        }
+        try {
+          const res = await fetch('/sim/tick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol, ltp, source }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            simStatus.textContent = `❌ Tick error: ${data.error || res.status}`;
+          } else {
+            // Update last tick tracking
+            lastSimTick = { ltp, source };
+            simLastPrice.textContent = ltp.toFixed(2);
+            simLastFeed.textContent = source;
+            simStatus.textContent = `✅ Tick sent: ${symbol} ${source} @ ${ltp.toFixed(2)}`;
+            
+            // Auto-increment for next tick (easier workflow)
+            const step = parseFloat(simStepInput.value) || 0.5;
+            simLtpInput.value = (ltp + step).toFixed(2);
+          }
+        } catch (err) {
+          simStatus.textContent = '❌ Network error sending tick.';
+        }
+      };
+
+      // Initial sync once symbols / currentSymbol are known
+      syncSimSymbol();
+    }
+
     function showToast(signal) {
       const container = document.getElementById('toast-container');
       const toast = document.createElement('div');
@@ -509,7 +674,15 @@
       // 1. FSM State
       const state = isLong ? data.buyState : data.sellState;
       const stateEl = document.getElementById('fsmStateDisplay');
-      stateEl.innerText = state;
+      let displayState = state;
+      if (isIndian && !isLong) {
+        // Map SELL states to BUY states for Indian PE (same as CE)
+        if (state === 'SELLSIGNAL') displayState = 'BUYSIGNAL';
+        else if (state === 'SELLENTRY_WINDOW') displayState = 'BUYENTRY_WINDOW';
+        else if (state === 'SELLPROFIT_WINDOW') displayState = 'BUYPROFIT_WINDOW';
+        else if (state === 'WAIT_FOR_SELLENTRY') displayState = 'WAIT_FOR_BUYENTRY';
+      }
+      stateEl.innerText = displayState;
       stateEl.className = 'state-highlight ' + (isLong ? 'buy-color' : 'sell-color');
 
       let fsmTitleText = '';
@@ -716,10 +889,10 @@
       document.getElementById('winRate').innerText = data.pnl.metrics.winRate + '%';
 
       // 5. Tables
-      updateTables(data);
+      updateTables(data, isIndian);
     }
 
-    function updateTables(modeData) {
+    function updateTables(modeData, isIndian) {
       const isLong = currentStrategy === 'LONG';
       const targetSide = isLong ? 'BUY' : 'SELL';
       const targetFsmSide = isLong ? 'BUY' : 'SELL';
@@ -739,10 +912,19 @@
       });
 
       filteredTrades.forEach(t => {
+        let displaySide = t.side;
+        let displayClass = t.side === 'BUY' ? 'buy-color' : 'sell-color';
+        
+        // Map PE_LONG to BUY
+        if (t.side === 'PE_LONG') {
+            displaySide = 'BUY';
+            displayClass = 'buy-color';
+        }
+
         const row = `<tr>
           <td>${new Date(t.ts).toLocaleTimeString()}</td>
           <td>${t.type}</td>
-          <td class="${t.side === 'BUY' ? 'buy-color' : 'sell-color'}">${t.side}</td>
+          <td class="${displayClass}">${displaySide}</td>
           <td>${t.qty}</td>
           <td>${t.price.toFixed(2)}</td>
           <td style="color: ${(t.pnl || 0) >= 0 ? '#3fb950' : '#f85149'}">${t.pnl ? t.pnl.toFixed(2) : '-'}</td>
@@ -772,10 +954,27 @@
       });
 
       filteredSignals.forEach(s => {
-        const sourceLabel = s.source === 'Synthetic' ? ' (Syn)' : (s.source === 'TradingView' ? ' (TV)' : '');
+        const sourceLabel = s.source === 'Synthetic' ? ' (Syn)' : 
+                            (s.source === 'TradingView' ? ' (TV)' : 
+                            (s.source ? ` (${s.source})` : ''));
+        
+        let displaySide = s.side;
+        let displayClass = s.side === 'BUY' ? 'buy-color' : 'sell-color';
+
+        // For PE Strategy (SELL FSM), flip the labels (ONLY for Indian indices)
+        if (isIndian && targetFsmSide === 'SELL') {
+            if (s.side === 'SELL') {
+                displaySide = 'BUY';
+                displayClass = 'buy-color';
+            } else if (s.side === 'BUY') {
+                displaySide = 'SELL';
+                displayClass = 'sell-color';
+            }
+        }
+
         const row = `<tr>
           <td>${new Date(s.ts).toLocaleTimeString()}</td>
-          <td class="${s.side === 'BUY' ? 'buy-color' : 'sell-color'}">${s.side}${sourceLabel}</td>
+          <td class="${displayClass}">${displaySide}${sourceLabel}</td>
           <td>${s.state}</td>
         </tr>`;
         sbody.innerHTML += row;

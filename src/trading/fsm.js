@@ -34,6 +34,8 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   let buyStop = null;
   let sellEntryTrigger = null;
   let sellStop = null;
+  let buySignalSource = null;
+  let sellSignalSource = null;
 
   // Position tracking - TWO INDEPENDENT POSITIONS
   let longPosition = null; // { side: 'LONG', qty, entryPrice, stop }
@@ -110,8 +112,9 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       symbol,
       ts,
       reason: reason || "OPEN_LONG",
+      signalSource: buySignalSource
     });
-    longPosition = { side: "LONG", qty, entryPrice: price, stop: null };
+    longPosition = { side: "LONG", qty, entryPrice: price, stop: null, meta: { signalSource: buySignalSource } };
     logger.info({ price, qty }, "Opened LONG position");
   }
 
@@ -156,17 +159,18 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       ts,
       reason: reason || (isIndianIndex ? "OPEN_PE_LONG" : "OPEN_SHORT"),
       leg: isIndianIndex ? "PE" : "SHORT",
+      signalSource: sellSignalSource
     };
 
     if (isIndianIndex) {
       // Indian index PUTs are traded long-only: BUY to open
       broker.placeLimitBuy(qty, price, meta);
-      shortPosition = { side: "PE_LONG", qty, entryPrice: price, stop: null };
+      shortPosition = { side: "PE_LONG", qty, entryPrice: price, stop: null, meta: { signalSource: sellSignalSource } };
       logger.info({ price, qty }, "Opened PE LONG position (Indian index)");
     } else {
       // Default: true SHORT
       broker.placeLimitSell(qty, price, meta);
-      shortPosition = { side: "SHORT", qty, entryPrice: price, stop: null };
+      shortPosition = { side: "SHORT", qty, entryPrice: price, stop: null, meta: { signalSource: sellSignalSource } };
       logger.info({ price, qty }, "Opened SHORT position");
     }
   }
@@ -351,6 +355,7 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     savedBUYLTP = ltp;
     buyEntryTrigger = savedBUYLTP + 0.5;
     buyStop = savedBUYLTP - 0.5;
+    buySignalSource = tick.source;
 
     buyEntryWindowStartTs = ts;
     buySignalFirstTickPending = false;
@@ -376,8 +381,17 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     const { ltp, ts } = tick;
 
     savedSELLLTP = ltp;
-    sellEntryTrigger = savedSELLLTP - 0.5;
-    sellStop = savedSELLLTP + 0.5;
+    if (isIndian) {
+      // Indian PE: Long logic (Buy PE)
+      sellEntryTrigger = savedSELLLTP + 0.5;
+      sellStop = savedSELLLTP - 0.5;
+    } else {
+      // Normal Short logic
+      sellEntryTrigger = savedSELLLTP - 0.5;
+      sellStop = savedSELLLTP + 0.5;
+    }
+    sellSignalSource = tick.source;
+
 
     sellEntryWindowStartTs = ts;
     sellSignalFirstTickPending = false;
@@ -442,7 +456,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       sellEntryWindowStartTs != null ? ts - sellEntryWindowStartTs : 0;
     const remainingMs = WINDOW_MS - elapsed;
 
-    if (ltp <= sellEntryTrigger) {
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
+    const triggerHit = isIndian ? (ltp >= sellEntryTrigger) : (ltp <= sellEntryTrigger);
+
+    if (triggerHit) {
       // Open SHORT and go to SELLPROFIT_WINDOW
       openShort(ltp, ts, "SELLENTRY_TRIGGER_HIT");
       shortPosition.stop = sellStop;
@@ -512,7 +529,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     const elapsed =
       sellProfitWindowStartTs != null ? ts - sellProfitWindowStartTs : 0;
 
-    if (ltp >= stop) {
+    const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
+    const stopHit = isIndian ? (ltp <= stop) : (ltp >= stop);
+
+    if (stopHit) {
       // Hit stop-loss: close, WAIT_WINDOW, then WAIT_FOR_SELLENTRY
       closeShort(ltp, ts, "SELLPROFIT_STOP_HIT");
       const remainingMs = WINDOW_MS - elapsed;
@@ -596,7 +616,10 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
     if (!waitForSellEntryFirstTickSeen) {
       waitForSellEntryFirstTickSeen = true;
 
-      if (ltp <= sellEntryTrigger) {
+      const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
+      const triggerHit = isIndian ? (ltp >= sellEntryTrigger) : (ltp <= sellEntryTrigger);
+
+      if (triggerHit) {
         openShort(ltp, ts, "WAIT_FOR_SELLENTRY_TRIGGER_HIT");
         shortPosition.stop = sellStop;
         sellProfitWindowStartTs = ts;
@@ -914,6 +937,22 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
       buyEntryFirstTickPending = false;
       sellEntryFirstTickPending = false;
       logger.info("FSM state reset to initial values. Signal history cleared.");
+    },
+    logSignal: (side, source = "Manual", explicitFsmSide = null) => {
+      const fsmSide = explicitFsmSide || (side === "BUY" ? "BUY" : "SELL");
+      const state = fsmSide === "BUY" ? buyState : sellState;
+      const isLive = typeof broker.isLive === 'function' ? broker.isLive() : false;
+      
+      signalHistory.unshift({
+        ts: Date.now(),
+        side,
+        fsmSide,
+        state,
+        isLive,
+        source
+      });
+      // Keep history size manageable
+      if (signalHistory.length > 50) signalHistory.pop();
     }
   };
 }

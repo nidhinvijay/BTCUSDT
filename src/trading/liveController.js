@@ -21,9 +21,28 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
 
   const getSidePnls = () => {
     const snapshot = paperPnlContext.getSnapshot();
+    const lastPrice = snapshot.lastPrice;
+    
+    let longPnl = 0;
+    const longPos = paperFsm.getLongPosition();
+    if (longPos && longPos.qty > 0 && Number.isFinite(lastPrice)) {
+       longPnl = (lastPrice - longPos.entryPrice) * longPos.qty;
+    }
+
+    let shortPnl = 0;
+    const shortPos = paperFsm.getShortPosition();
+    if (shortPos && shortPos.qty > 0 && Number.isFinite(lastPrice)) {
+        const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some((s) =>
+          snapshot.symbol.includes(s)
+        );
+        shortPnl = isIndian
+          ? (lastPrice - shortPos.entryPrice) * shortPos.qty
+          : (shortPos.entryPrice - lastPrice) * shortPos.qty;
+    }
+
     return {
-      long: snapshot.longTotalPnl ?? snapshot.totalPnl ?? 0,
-      short: snapshot.shortTotalPnl ?? snapshot.totalPnl ?? 0
+      long: longPnl,
+      short: shortPnl
     };
   };
 
@@ -45,8 +64,9 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
       let longPnl = 0;
       if (longPosPaper && longPosPaper.qty > 0) {
         const upnl = (lastPrice - longPosPaper.entryPrice) * longPosPaper.qty;
-        const realized = paperSnap.longStats ? paperSnap.longStats.realizedPnl : 0;
-        longPnl = realized + upnl;
+        // User requested to ignore cumulative PnL and only check if current strategy (position) is profitable
+        // const realized = paperSnap.longStats ? paperSnap.longStats.realizedPnl : 0;
+        longPnl = upnl; 
       }
 
       let shortPnl = 0;
@@ -57,8 +77,9 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
         const upnl = isIndian
           ? (lastPrice - shortPosPaper.entryPrice) * shortPosPaper.qty
           : (shortPosPaper.entryPrice - lastPrice) * shortPosPaper.qty;
-        const realized = paperSnap.shortStats ? paperSnap.shortStats.realizedPnl : 0;
-        shortPnl = realized + upnl;
+        // User requested to ignore cumulative PnL and only check if current strategy (position) is profitable
+        // const realized = paperSnap.shortStats ? paperSnap.shortStats.realizedPnl : 0;
+        shortPnl = upnl;
       }
 
       // Check if Paper is still in the same window instance as when we deactivated
@@ -70,26 +91,34 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
       const checkShort = !targetSide || targetSide === 'SELL';
 
       // Promote CE (LONG) if open, non-negative, and LIVE is flat on that side
-      if (
-        checkLong &&
-        longPosPaper &&
-        longPosPaper.qty > 0 &&
-        longPnl >= 0 &&
-        (!longPosLive || longPosLive.qty <= 0)
-      ) {
-        // Don't promote if we're still in the same window instance
-        if (longWindowSame && paperState.buyProfitWindowStartTs) {
-          logger.info(
-            { side: 'BUY', windowStartTs: paperState.buyProfitWindowStartTs },
-            '[LiveController] Skipping LONG promotion - still in same Paper profit window'
-          );
-        } else {
-          logger.info(
-            { side: 'BUY', longPnl: longPnl.toFixed(2), lastPrice },
-            '[LiveController] Promoting PAPER LONG to LIVE via synthetic BUY signal'
-          );
-          liveBot.signalBus.emitBuy({ source: 'Synthetic' });
-        }
+      if (checkLong && longPosPaper && longPosPaper.qty > 0) {
+         if (longPnl >= threshold && (!longPosLive || longPosLive.qty <= 0)) {
+            // Don't promote if we're still in the same window instance
+            if (longWindowSame && paperState.buyProfitWindowStartTs) {
+              logger.info(
+                { side: 'BUY', windowStartTs: paperState.buyProfitWindowStartTs },
+                '[LiveController] Skipping LONG promotion - still in same Paper profit window'
+              );
+            } else {
+              let sourceLabel = 'Synthetic';
+              if (longPosPaper?.meta?.signalSource === 'Close + Re-entry') {
+                  sourceLabel = 'Re-entry';
+              }
+              logger.info(
+                { side: 'BUY', longPnl: longPnl.toFixed(2), lastPrice, source: sourceLabel },
+                `[LiveController] Promoting PAPER LONG to LIVE via ${sourceLabel} BUY signal`
+              );
+              liveBot.signalBus.emitBuy({ source: sourceLabel });
+            }
+         } else {
+             // Debug why not promoting
+             if (longPnl < threshold) {
+                 logger.debug({ longPnl, threshold }, '[LiveController] LONG PnL below threshold');
+             }
+             if (longPosLive && longPosLive.qty > 0) {
+                 logger.debug('[LiveController] LIVE LONG already open');
+             }
+         }
       }
 
       // Promote PE (SHORT) if open, non-negative, and LIVE is flat on that side
@@ -107,11 +136,15 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
             '[LiveController] Skipping SHORT promotion - still in same Paper profit window'
           );
         } else {
+          let sourceLabel = 'Synthetic';
+          if (shortPosPaper?.meta?.signalSource === 'Close + Re-entry') {
+              sourceLabel = 'Re-entry';
+          }
           logger.info(
-            { side: 'SELL', shortPnl: shortPnl.toFixed(2), lastPrice },
-            '[LiveController] Promoting PAPER SHORT to LIVE via synthetic SELL signal'
+            { side: 'SELL', shortPnl: shortPnl.toFixed(2), lastPrice, source: sourceLabel },
+            `[LiveController] Promoting PAPER SHORT to LIVE via ${sourceLabel} SELL signal`
           );
-          liveBot.signalBus.emitSell({ source: 'Synthetic' });
+          liveBot.signalBus.emitSell({ source: sourceLabel });
         }
       }
     } catch (err) {

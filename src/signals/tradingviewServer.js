@@ -215,17 +215,31 @@ export function startTradingViewServer({ activeBots, logger }) {
         ) {
           closed = paperFsm.forceCloseLong("TV_SELL_EXIT");
           if (closed) {
-            controller?.forwardSignal('SELL', {
-              source: 'SyntheticExit',
-              optionType: 'CALL',
-              symbol
-            });
+            // Also close LIVE position
+            const liveFsm = bot.live?.fsm;
+            if (liveFsm && typeof liveFsm.forceCloseLong === 'function') {
+              liveFsm.forceCloseLong("TV_SELL_EXIT");
+            }
             logger.info({ symbol }, "Closed CE position on SELL signal");
           }
         }
+        // Always emit new signal to Paper, even if we just closed a position (Close + Re-enter)
+        if (closed) {
+          if (typeof paperFsm.logSignal === 'function') {
+            // Log the Exit signal first, explicitly for BUY FSM (CE)
+            paperFsm.logSignal(side, 'TradingView', 'BUY');
+          }
+          // Also log to Live FSM if it exists
+          const liveFsm = bot.live?.fsm;
+          if (liveFsm && typeof liveFsm.logSignal === 'function') {
+             liveFsm.logSignal(side, 'TradingView', 'BUY');
+          }
+        }
+
+        // For CE, a re-entry is a BUY signal (even if triggered by a SELL exit)
         bot.paper.signalBus.emitBuy({
-          source: 'TradingView',
-          action: side,
+          source: closed ? 'Close + Re-entry' : 'TradingView',
+          action: closed ? 'BUY' : side,
           optionType
         });
         logger.info({ symbol, side, optionType, closed }, "CE signal routed to BUY FSM");
@@ -241,11 +255,11 @@ export function startTradingViewServer({ activeBots, logger }) {
         ) {
           closed = paperFsm.forceCloseShort("TV_SELL_EXIT");
           if (closed) {
-            controller?.forwardSignal('SELL', {
-              source: 'SyntheticExit',
-              optionType: 'PUT',
-              symbol
-            });
+            // Also close LIVE position
+            const liveFsm = bot.live?.fsm;
+            if (liveFsm && typeof liveFsm.forceCloseShort === 'function') {
+              liveFsm.forceCloseShort("TV_SELL_EXIT");
+            }
             logger.info({ symbol }, "Closed PE position on SELL signal");
           }
         } else if (side === 'SELL') {
@@ -254,9 +268,24 @@ export function startTradingViewServer({ activeBots, logger }) {
           logger.info({ symbol }, "PE SELL with no open position - treating as BUY entry for PE");
         }
 
+        // Always emit new signal to Paper, even if we just closed a position (Close + Re-entry)
+        if (closed) {
+          if (typeof paperFsm.logSignal === 'function') {
+            // Log the Exit signal first, explicitly for SELL FSM (PE)
+            // Log as 'BUY' so that the dashboard flips it to 'SELL' (Exit)
+            paperFsm.logSignal('BUY', 'TradingView', 'SELL');
+          }
+          // Also log to Live FSM if it exists
+          const liveFsm = bot.live?.fsm;
+          if (liveFsm && typeof liveFsm.logSignal === 'function') {
+             liveFsm.logSignal('BUY', 'TradingView', 'SELL');
+          }
+        }
+
+        // For PE, a re-entry is a SELL signal
         bot.paper.signalBus.emitSell({
-          source: 'TradingView',
-          action: actionForFsm,
+          source: closed ? 'Close + Re-entry' : 'TradingView',
+          action: (closed || actionForFsm === 'BUY') ? 'SELL' : actionForFsm, 
           optionType
         });
         logger.info({ symbol, side, optionType, closed, actionForFsm }, "PE signal routed to SELL FSM");

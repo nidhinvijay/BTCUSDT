@@ -613,15 +613,33 @@
       document.getElementById('posSize').innerText = pos ? pos.qty : 'None';
       document.getElementById('posEntry').innerText = pos ? pos.entryPrice.toFixed(2) : '-';
       const activeInstrument = isLong ? symbolData.signalSymbolBuy : symbolData.signalSymbolSell;
-      const displayPrice = activeInstrument?.ltp ?? data.pnl.lastPrice;
-      document.getElementById('lastPrice').innerText =
-        typeof displayPrice === 'number'
-          ? displayPrice.toFixed(2)
-          : displayPrice ?? '-';
+
+      // For Indian indices, hide the raw index from the UI.
+      // Only show price/name when an option instrument is actually selected.
+      let displayPrice;
+      if (isIndian) {
+        displayPrice = activeInstrument?.ltp;
+      } else {
+        displayPrice = activeInstrument?.ltp ?? data.pnl.lastPrice;
+      }
+
+      const lastPriceEl = document.getElementById('lastPrice');
+      if (typeof displayPrice === 'number') {
+        lastPriceEl.innerText = displayPrice.toFixed(2);
+      } else {
+        lastPriceEl.innerText = '-';
+      }
+
       const signalNameEl = document.getElementById('signalSymbolName');
-      const symbolLabel =
-        activeInstrument?.symbol ??
-        (isIndian ? currentSymbol + ' (index)' : currentSymbol);
+      let symbolLabel;
+      if (activeInstrument?.symbol) {
+        symbolLabel = activeInstrument.symbol;
+      } else if (isIndian) {
+        // Do not show the underlying index name at all
+        symbolLabel = '-';
+      } else {
+        symbolLabel = currentSymbol;
+      }
       signalNameEl.innerText = symbolLabel;
       const posModeEl = document.getElementById('posMode');
       if (currentMode === 'LIVE') {

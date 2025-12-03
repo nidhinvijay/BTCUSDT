@@ -622,7 +622,13 @@ export function createFSM({ symbol, signalBus, broker, pnlContext, logger }) {
   // Handle BOTH FSMs in parallel
 
   function onTick(tick) {
-    // tick: { ltp, ts } ts = ms
+    // tick: { ltp, ts, source } ts = ms
+    if (isIndianIndex && tick?.source === 'base') {
+      // For Indian indices, completely ignore underlying index ticks.
+      // Only option contract feeds (buy/sell) should move the FSM.
+      return;
+    }
+
     lastTick = tick;
     const source = tick?.source || 'base';
     const canProcessBuy = source === 'buy' || source === 'base';

@@ -101,22 +101,27 @@ export async function setupOptionsBot({
     sell: { display: null, fyersSymbol: null, ltp: null, unsubscribe: null },
   };
 
-  const priceFeed = { activeBuy: true, activeSell: true, activeBase: true };
+  // Only option contract ticks (buy/sell feeds) should drive FSM + PnL.
+  // Underlying index ("base") ticks are ignored so they cannot corrupt entries/PnL.
+  const priceFeed = { activeBuy: false, activeSell: false };
 
   const feedPriceTick = (source, tick) => {
     if (!tick || typeof tick.ltp !== 'number') return;
+    if (source === 'base') return;
+
     const normalizedTick = {
       ltp: tick.ltp,
       ts: tick.ts || Date.now(),
       source,
     };
+
     if (
       (source === 'buy' && !priceFeed.activeBuy) ||
-      (source === 'sell' && !priceFeed.activeSell) ||
-      (source === 'base' && !priceFeed.activeBase)
+      (source === 'sell' && !priceFeed.activeSell)
     ) {
       return;
     }
+
     paper.pnlContext.updateMarkPrice(normalizedTick.ltp);
     live.pnlContext.updateMarkPrice(normalizedTick.ltp);
     liveController.onTick();
@@ -163,7 +168,6 @@ export async function setupOptionsBot({
       detachInstrument('sell');
       priceFeed.activeBuy = false;
       priceFeed.activeSell = false;
-      priceFeed.activeBase = true;
       return;
     }
 

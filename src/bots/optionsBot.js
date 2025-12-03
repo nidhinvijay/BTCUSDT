@@ -5,8 +5,7 @@ import { createLiveBroker } from '../trading/liveBroker.js';
 import { createPnlContext } from '../trading/pnlContext.js';
 import { createLiveCompositeBroker } from '../trading/liveCompositeBroker.js';
 import { createLiveController } from '../trading/liveController.js';
-import { startFyersStream } from '../exchange/fyersStream.js';
-import { subscribeToSymbol, getLastTick } from '../exchange/fyersDataHub.js';
+import { ensureFyersHub, subscribeToSymbol, getLastTick } from '../exchange/fyersDataHub.js';
 import { upsertMachineState, readMachineState } from '../utils/stateStore.js';
 import { resumeState } from '../utils/resumer.js';
 
@@ -246,14 +245,12 @@ export async function setupOptionsBot({
     saveState();
   });
 
-  logger.info(`[${symbol}] Using Fyers market data`);
-  startFyersStream({
-    symbol,
-    accessToken: () => fyersAuth.getToken(),
+  logger.info(`[${symbol}] Using Fyers option-only market data`);
+  // Ensure FYERS websocket hub is connected; actual price updates
+  // come only from option subscriptions (subscribeInstrument).
+  await ensureFyersHub({
     appId: fyersConfig.appId,
-    onTick: (tick) => {
-      feedPriceTick('base', tick);
-    },
+    accessToken: () => fyersAuth.getToken(),
     logger,
   });
 

@@ -8,7 +8,7 @@ import { config } from '../config/env.js';
 
 let wssInstance = null;
 
-function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
+export function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
   if (!rawSymbol) return null;
   const allowed = ['NIFTY', 'BANKNIFTY', 'SENSEX'];
   const cleaned = rawSymbol.toUpperCase();
@@ -31,7 +31,7 @@ function normalizeInstrumentSymbol(baseSymbol, rawSymbol) {
   return { display: fallbackDisplay, fyersSymbol: fallback, optionType: null };
 }
 
-function mapIndianOptionSymbol(symbol) {
+export function mapIndianOptionSymbol(symbol) {
   const raw = symbol.startsWith('NSE:') || symbol.startsWith('BSE:') ? symbol.slice(4) : symbol;
 
   // Pattern: ROOT + YY + MM + DD + (C/P) + STRIKE

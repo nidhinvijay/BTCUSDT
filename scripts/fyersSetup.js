@@ -43,7 +43,7 @@ async function main() {
   // Check if already authenticated
   if (fyersAuth.isAuthenticated()) {
     console.log('✅ You are already authenticated!');
-    console.log(`Access Token: ${fyersAuth.getToken()}`);
+    console.log(`Access Token: ${fyersAuth.getToken({ raw: true })}`);
     rl.close();
     return;
   }

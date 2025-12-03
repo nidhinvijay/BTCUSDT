@@ -4,23 +4,13 @@ import './config/env.js';
 import { config } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { startTradingViewServer } from './signals/tradingviewServer.js';
-import { createSignalBus } from './signals/signalBus.js';
-import { createFSM } from './trading/fsm.js';
-import { createPaperBroker } from './trading/paperBroker.js';
-import { createLiveBroker } from './trading/liveBroker.js';
-import { createPnlContext } from './trading/pnlContext.js';
-import { startMarketStream } from './exchange/marketStream.js';
-import { upsertMachineState, readMachineState } from './utils/stateStore.js';
-import { resumeState } from './utils/resumer.js';
-import { createLiveCompositeBroker } from './trading/liveCompositeBroker.js';
-import { createLiveController } from './trading/liveController.js';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import { startScheduler } from './utils/scheduler.js';
 import { FyersAuth } from './brokers/fyersAuth.js';
-import { startFyersStream } from './exchange/fyersStream.js';
-import { subscribeToSymbol, getLastTick } from './exchange/fyersDataHub.js';
 import { setWss } from './signals/tradingviewServer.js';
+import { setupCryptoBot } from './bots/cryptoBot.js';
+import { setupOptionsBot } from './bots/optionsBot.js';
 
 async function main() {
   logger.info(`Starting Multi-Asset Paper Trader...`);
@@ -28,7 +18,6 @@ async function main() {
 
   // Initialize Fyers authentication if configured
   let fyersAuth = null;
-  let fyersAccessToken = null;
 
   if (config.fyers.enabled) {
     try {
@@ -43,7 +32,6 @@ async function main() {
       await fyersAuth.initialize();
 
       if (fyersAuth.isAuthenticated()) {
-        fyersAccessToken = fyersAuth.getToken();
         logger.info('✅ Fyers authenticated - Indian indices will use live data');
       } else {
         logger.warn('⚠️ Fyers not authenticated. Run: npm run auth');
@@ -65,269 +53,27 @@ async function main() {
   for (const symbol of config.symbols) {
     logger.info(`Initializing bot for ${symbol}...`);
 
-    // 1. Initialize Paper bot stack
-    const paper = {
-      signalBus: createSignalBus(),
-      pnlContext: createPnlContext({ symbol }),
-    };
-    paper.broker = createPaperBroker({ symbol, pnlContext: paper.pnlContext, logger, modeLabel: 'PAPER' });
-    paper.fsm = createFSM({
-      symbol,
-      signalBus: paper.signalBus,
-      broker: paper.broker,
-      pnlContext: paper.pnlContext,
-      logger
-    });
-
-    // 2. Initialize Live bot stack
-    const live = {
-      signalBus: createSignalBus(),
-      pnlContext: createPnlContext({ symbol }),
-    };
-    const liveBookkeepingBroker = createPaperBroker({
-      symbol,
-      pnlContext: live.pnlContext,
-      logger,
-      modeLabel: 'LIVE'
-    });
-    const liveExecutionBroker = createLiveBroker({ symbol, logger });
-    live.broker = createLiveCompositeBroker({
-      executionBroker: liveExecutionBroker,
-      bookkeepingBroker: liveBookkeepingBroker,
-      logger
-    });
-    live.fsm = createFSM({
-      symbol,
-      signalBus: live.signalBus,
-      broker: live.broker,
-      pnlContext: live.pnlContext,
-      logger
-    });
-
-    const liveController = createLiveController({
-      paperBot: paper,
-      liveBot: live,
-      logger,
-      gateConfig: config.liveGate
-    });
-
-    // 3. Resume State
-    let signalSymbolState = {
-      buy: {
-        display: null,
-        fyersSymbol: null,
-        ltp: null,
-        unsubscribe: null,
-      },
-      sell: {
-        display: null,
-        fyersSymbol: null,
-        ltp: null,
-        unsubscribe: null,
-      }
-    };
-
-    if (resumeState({ paper, live }, symbol)) {
-      logger.info(`[${symbol}] State resumed successfully.`);
-
-      // Restore option subscriptions if they exist in saved state
-      const savedState = readMachineState(symbol);
-      if (savedState?.signalSymbolState) {
-        if (savedState.signalSymbolState.buy?.fyersSymbol) {
-          signalSymbolState.buy.display = savedState.signalSymbolState.buy.display;
-          signalSymbolState.buy.fyersSymbol = savedState.signalSymbolState.buy.fyersSymbol;
-          logger.info(
-            { symbol: savedState.signalSymbolState.buy.display, fyersSymbol: savedState.signalSymbolState.buy.fyersSymbol },
-            '[State Resume] Restored BUY option subscription'
-          );
-        }
-        if (savedState.signalSymbolState.sell?.fyersSymbol) {
-          signalSymbolState.sell.display = savedState.signalSymbolState.sell.display;
-          signalSymbolState.sell.fyersSymbol = savedState.signalSymbolState.sell.fyersSymbol;
-          logger.info(
-            { symbol: savedState.signalSymbolState.sell.display, fyersSymbol: savedState.signalSymbolState.sell.fyersSymbol },
-            '[State Resume] Restored SELL option subscription'
-          );
-        }
-      }
-    } else {
-      logger.info(`[${symbol}] No saved state found, starting fresh.`);
-    }
-    liveController.onTick();
-
-    // 4. Auto-Save State & Immediate Save Helper
-    const saveState = () => {
-      const stateToSave = {
-        paper: {
-          fsm: paper.fsm.getState(),
-          pnl: paper.pnlContext.getState()
-        },
-        live: {
-          fsm: live.fsm.getState(),
-          pnl: live.pnlContext.getState(),
-          isActive: liveController.isLiveActive()
-        },
-        signalSymbolState: {
-          buy: { display: signalSymbolState.buy.display, fyersSymbol: signalSymbolState.buy.fyersSymbol },
-          sell: { display: signalSymbolState.sell.display, fyersSymbol: signalSymbolState.sell.fyersSymbol }
-        },
-        timestamp: Date.now()
-      };
-      upsertMachineState(symbol, stateToSave);
-    };
-
-    // Periodic Save
-    setInterval(() => {
-      saveState();
-    }, 60000);
-
-    // Immediate Save on Critical Events (Signals)
-    paper.signalBus.onBuy((payload) => {
-      logger.info(`[${symbol}] Immediate state save triggered by BUY signal`);
-      liveController.forwardSignal('BUY', payload);
-      saveState();
-    });
-    paper.signalBus.onSell((payload) => {
-      logger.info(`[${symbol}] Immediate state save triggered by SELL signal`);
-      liveController.forwardSignal('SELL', payload);
-      saveState();
-    });
-
-    // 5. Market stream (conditional: Binance or Fyers)
     const exchange = config.exchangeMapping[symbol] || 'binance';
-
-    const priceFeed = {
-      active: 'base',
-    };
-
-    const feedPriceTick = (source, tick) => {
-      if (!tick || typeof tick.ltp !== 'number') return;
-      if (source !== priceFeed.active) return;
-      const normalizedTick = { ltp: tick.ltp, ts: tick.ts || Date.now(), source };
-      paper.pnlContext.updateMarkPrice(normalizedTick.ltp);
-      live.pnlContext.updateMarkPrice(normalizedTick.ltp);
-      liveController.onTick();
-      paper.fsm.onTick(normalizedTick);
-      live.fsm.onTick(normalizedTick);
-    };
-
-    const detachInstrument = (side) => {
-      if (signalSymbolState[side].unsubscribe) {
-        signalSymbolState[side].unsubscribe();
-        signalSymbolState[side].unsubscribe = null;
-      }
-      signalSymbolState[side].display = null;
-      signalSymbolState[side].fyersSymbol = null;
-      signalSymbolState[side].ltp = null;
-    };
-
-    const subscribeInstrument = (side, info) => {
-      detachInstrument(side);
-      if (!info || !info.fyersSymbol) return;
-
-      signalSymbolState[side].display = info.display || info.fyersSymbol;
-      signalSymbolState[side].fyersSymbol = info.fyersSymbol;
-      signalSymbolState[side].ltp = null;
-
-      signalSymbolState[side].unsubscribe = subscribeToSymbol(info.fyersSymbol, (tick) => {
-        signalSymbolState[side].ltp = tick.ltp;
-        feedPriceTick(side, tick);
-      });
-
-      const cached = getLastTick(info.fyersSymbol);
-      if (cached) {
-        signalSymbolState[side].ltp = cached.ltp;
-        feedPriceTick(side, cached);
-      }
-    };
-
-    let setInstrument = (info) => {
-      if (!info || !info.fyersSymbol) {
-        detachInstrument('buy');
-        detachInstrument('sell');
-        priceFeed.active = 'base';
-        return;
-      }
-
-      const intendedSide = info.optionType === 'PUT' ? 'sell' : 'buy';
-      subscribeInstrument(intendedSide, info);
-      priceFeed.active = intendedSide;
-    };
-
-    if (exchange === 'fyers') {
-      // Fyers stream for Indian indices
-      if (fyersAccessToken) {
-        logger.info(`[${symbol}] Using Fyers market data`);
-
-        startFyersStream({
-          symbol,
-          accessToken: () => fyersAuth.getToken(),
-          appId: config.fyers.appId,
-          onTick: (tick) => {
-            if (priceFeed.active === 'base') {
-              feedPriceTick('base', tick);
-            }
-          },
-          logger
-        });
-
-        // Re-subscribe to saved option contracts after Fyers connection established
-        setTimeout(() => {
-          // Determine which side has an open position
-          const longPos = paper.fsm.getLongPosition();
-          const shortPos = paper.fsm.getShortPosition();
-
-          let activeSide = null;
-          if (longPos && longPos.qty > 0) {
-            activeSide = 'buy';
-          } else if (shortPos && shortPos.qty > 0) {
-            activeSide = 'sell';
-          }
-
-          // Only re-subscribe to the side with an open position
-          if (activeSide && signalSymbolState[activeSide]?.fyersSymbol) {
-            subscribeInstrument(activeSide, {
-              fyersSymbol: signalSymbolState[activeSide].fyersSymbol,
-              display: signalSymbolState[activeSide].display
-            });
-            priceFeed.active = activeSide;
-            logger.info(
-              { side: activeSide, fyersSymbol: signalSymbolState[activeSide].fyersSymbol },
-              '[State Resume] Re-subscribed to option contract for open position'
-            );
-          }
-        }, 2000); // Wait 2s for Fyers connection to establish
-      } else {
-        logger.warn(`[${symbol}] Skipping - Fyers token not available. Run: npm run auth`);
-        continue; // Skip this symbol
-      }
-    } else {
-      // Binance stream for crypto
-      logger.info(`[${symbol}] Using Binance market data`);
-      startMarketStream({
+    let bot = null;
+    if (exchange === 'binance') {
+      bot = await setupCryptoBot({
         symbol,
-        onTick: (tick) => {
-          const normalizedTick = { ltp: tick.ltp, ts: tick.ts || Date.now(), source: 'base' };
-          paper.pnlContext.updateMarkPrice(normalizedTick.ltp);
-          live.pnlContext.updateMarkPrice(normalizedTick.ltp);
-          liveController.onTick();
-          paper.fsm.onTick(normalizedTick);
-          live.fsm.onTick(normalizedTick);
-        },
-        logger
+        logger,
+        liveGate: config.liveGate,
       });
-
-      setInstrument = () => { };
+    } else if (exchange === 'fyers') {
+      bot = await setupOptionsBot({
+        symbol,
+        logger,
+        liveGate: config.liveGate,
+        fyersAuth,
+        fyersConfig: config.fyers,
+      });
     }
 
-    // Store in Map
-    activeBots.set(symbol, {
-      paper,
-      live,
-      controller: liveController,
-      signalSymbolState,
-      setInstrument,
-    });
+    if (!bot) continue;
+
+    activeBots.set(symbol, bot);
   }
 
   // 6. Start Scheduler (5:30 AM Reset)

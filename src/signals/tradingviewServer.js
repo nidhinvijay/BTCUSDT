@@ -215,7 +215,7 @@ export function startTradingViewServer({ activeBots, logger }) {
         ) {
           closed = paperFsm.forceCloseLong("TV_SELL_EXIT");
           if (closed) {
-            controller?.forwardSignal('BUY', {
+            controller?.forwardSignal('SELL', {
               source: 'SyntheticExit',
               optionType: 'CALL',
               symbol

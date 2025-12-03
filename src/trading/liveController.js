@@ -1,7 +1,10 @@
 export function createLiveController({ paperBot, liveBot, logger, gateConfig = {} }) {
   const { enabled = true, threshold = 0 } = gateConfig;
   let isLiveActive = !enabled;
-  let lastTotalPnl = null;
+  let isLiveActiveLong = !enabled;
+  let isLiveActiveShort = !enabled;
+  let lastLongGatePnl = null;
+  let lastShortGatePnl = null;
 
   const paperPnlContext = paperBot.pnlContext;
   const paperFsm = paperBot.fsm;
@@ -16,12 +19,15 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
     logger.info('[LiveController] Gate disabled via config. LIVE bot always active.');
   }
 
-  const getTotalPnl = () => {
+  const getSidePnls = () => {
     const snapshot = paperPnlContext.getSnapshot();
-    return snapshot.totalPnl;
+    return {
+      long: snapshot.longTotalPnl ?? snapshot.totalPnl ?? 0,
+      short: snapshot.shortTotalPnl ?? snapshot.totalPnl ?? 0
+    };
   };
 
-  const maybePromotePositionsToLive = () => {
+  const maybePromotePositionsToLive = (targetSide = null) => {
     try {
       const paperSnap = paperPnlContext.getSnapshot();
       const lastPrice = paperSnap.lastPrice;
@@ -60,8 +66,17 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
       const longWindowSame = lastDeactivationPaperWindows.buyProfitWindowStartTs === paperState.buyProfitWindowStartTs;
       const shortWindowSame = lastDeactivationPaperWindows.sellProfitWindowStartTs === paperState.sellProfitWindowStartTs;
 
+      const checkLong = !targetSide || targetSide === 'BUY';
+      const checkShort = !targetSide || targetSide === 'SELL';
+
       // Promote CE (LONG) if open, non-negative, and LIVE is flat on that side
-      if (longPosPaper && longPosPaper.qty > 0 && longPnl >= 0 && (!longPosLive || longPosLive.qty <= 0)) {
+      if (
+        checkLong &&
+        longPosPaper &&
+        longPosPaper.qty > 0 &&
+        longPnl >= 0 &&
+        (!longPosLive || longPosLive.qty <= 0)
+      ) {
         // Don't promote if we're still in the same window instance
         if (longWindowSame && paperState.buyProfitWindowStartTs) {
           logger.info(
@@ -78,7 +93,13 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
       }
 
       // Promote PE (SHORT) if open, non-negative, and LIVE is flat on that side
-      if (shortPosPaper && shortPosPaper.qty > 0 && shortPnl >= 0 && (!shortPosLive || shortPosLive.qty <= 0)) {
+      if (
+        checkShort &&
+        shortPosPaper &&
+        shortPosPaper.qty > 0 &&
+        shortPnl >= 0 &&
+        (!shortPosLive || shortPosLive.qty <= 0)
+      ) {
         // Don't promote if we're still in the same window instance
         if (shortWindowSame && paperState.sellProfitWindowStartTs) {
           logger.info(
@@ -98,42 +119,71 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
     }
   };
 
-  const activateLive = (promoteFromPaper) => {
-    if (isLiveActive) return;
-    isLiveActive = true;
-    logger.info(
-      `[LiveController] Paper PnL ${getTotalPnl().toFixed(2)} > ${threshold.toFixed(
-        2
-      )}. LIVE bot activated.`
-    );
-    if (promoteFromPaper) {
-      maybePromotePositionsToLive();
+  const rememberWindow = (side) => {
+    const paperState = paperFsm.getState();
+    if (side === 'BUY') {
+      lastDeactivationPaperWindows.buyProfitWindowStartTs =
+        paperState.buyProfitWindowStartTs;
+    } else if (side === 'SELL') {
+      lastDeactivationPaperWindows.sellProfitWindowStartTs =
+        paperState.sellProfitWindowStartTs;
     }
   };
 
-  const deactivateLive = async () => {
-    if (!isLiveActive) return;
-    isLiveActive = false;
-
-    // Store current Paper window timestamps to prevent re-promotion during same window
-    const paperState = paperFsm.getState();
-    lastDeactivationPaperWindows = {
-      buyProfitWindowStartTs: paperState.buyProfitWindowStartTs,
-      sellProfitWindowStartTs: paperState.sellProfitWindowStartTs
-    };
-
-    logger.info(
-      `[LiveController] Paper PnL ${getTotalPnl().toFixed(2)} <= ${threshold.toFixed(
-        2
-      )}. LIVE bot paused & flattening.`
-    );
-    try {
-      liveBot.fsm.manualCloseAll();
-      if (typeof liveBot.broker.closeAll === 'function') {
-        await liveBot.broker.closeAll();
+  const activateSide = (side) => {
+    if (!enabled) return;
+    if (side === 'BUY') {
+      if (isLiveActiveLong) return;
+      isLiveActiveLong = true;
+      if (!isLiveActive) {
+        isLiveActive = true;
+        logger.info(
+          `[LiveController] LONG gate activated (threshold ${threshold.toFixed(2)})`
+        );
       }
-    } catch (err) {
-      logger.error({ err }, '[LiveController] Failed to close live positions during deactivation');
+      maybePromotePositionsToLive('BUY');
+    } else {
+      if (isLiveActiveShort) return;
+      isLiveActiveShort = true;
+      if (!isLiveActive) {
+        isLiveActive = true;
+        logger.info(
+          `[LiveController] SHORT gate activated (threshold ${threshold.toFixed(2)})`
+        );
+      }
+      maybePromotePositionsToLive('SELL');
+    }
+  };
+
+  const deactivateSide = async (side) => {
+    if (!enabled) return;
+    const isLongSide = side === 'BUY';
+    if (isLongSide) {
+      if (!isLiveActiveLong) return;
+      isLiveActiveLong = false;
+      rememberWindow('BUY');
+      try {
+        if (typeof liveBot.fsm.forceCloseLong === 'function') {
+          liveBot.fsm.forceCloseLong('GATE_DEACTIVATE');
+        }
+      } catch (err) {
+        logger.error({ err }, '[LiveController] Failed to close LONG during deactivation');
+      }
+    } else {
+      if (!isLiveActiveShort) return;
+      isLiveActiveShort = false;
+      rememberWindow('SELL');
+      try {
+        if (typeof liveBot.fsm.forceCloseShort === 'function') {
+          liveBot.fsm.forceCloseShort('GATE_DEACTIVATE');
+        }
+      } catch (err) {
+        logger.error({ err }, '[LiveController] Failed to close SHORT during deactivation');
+      }
+    }
+    if (!isLiveActiveLong && !isLiveActiveShort) {
+      isLiveActive = false;
+      logger.info('[LiveController] LIVE bot paused - both gates inactive.');
     }
   };
 
@@ -144,14 +194,29 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
       }
       return;
     }
-    const total = getTotalPnl();
-    const crossedUp = total > threshold && (lastTotalPnl === null || lastTotalPnl <= threshold);
-    if (total > threshold && !isLiveActive) {
-      activateLive(crossedUp);
-    } else if (total <= threshold && isLiveActive) {
-      deactivateLive();
+    const { long, short } = getSidePnls();
+    const crossedLongUp =
+      long > threshold && (lastLongGatePnl === null || lastLongGatePnl <= threshold);
+    const crossedShortUp =
+      short > threshold && (lastShortGatePnl === null || lastShortGatePnl <= threshold);
+    const crossedLongDown = long <= threshold && isLiveActiveLong;
+    const crossedShortDown = short <= threshold && isLiveActiveShort;
+
+    if (crossedLongUp) {
+      activateSide('BUY');
     }
-    lastTotalPnl = total;
+    if (crossedShortUp) {
+      activateSide('SELL');
+    }
+    if (crossedLongDown) {
+      deactivateSide('BUY');
+    }
+    if (crossedShortDown) {
+      deactivateSide('SELL');
+    }
+
+    lastLongGatePnl = long;
+    lastShortGatePnl = short;
   };
 
   return {
@@ -159,7 +224,9 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
       evaluateGate();
     },
     forwardSignal(side, payload = {}) {
-      if (!isLiveActive) return false;
+      const gateActive =
+        side === 'BUY' ? isLiveActiveLong : isLiveActiveShort;
+      if (!gateActive) return false;
       if (side === 'BUY') {
         liveBot.signalBus.emitBuy(payload);
       } else if (side === 'SELL') {
@@ -168,8 +235,11 @@ export function createLiveController({ paperBot, liveBot, logger, gateConfig = {
       return true;
     },
     isLiveActive() {
-      return isLiveActive;
+      return isLiveActiveLong || isLiveActiveShort;
     },
-    forceDeactivate: deactivateLive
+    forceDeactivate: () => {
+      deactivateSide('BUY');
+      deactivateSide('SELL');
+    }
   };
 }

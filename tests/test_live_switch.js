@@ -15,12 +15,16 @@ function createMockBot() {
       snapshotData: {
         symbol: 'BTCUSDT',
         totalPnl: 0,
+        longTotalPnl: 0,
+        shortTotalPnl: 0,
         lastPrice: 100,
         longStats: { realizedPnl: 0 },
         shortStats: { realizedPnl: 0 },
       },
       getSnapshot() { return this.snapshotData; },
       setTotalPnl(pnl) { this.snapshotData.totalPnl = pnl; },
+      setLongTotal(pnl) { this.snapshotData.longTotalPnl = pnl; },
+      setShortTotal(pnl) { this.snapshotData.shortTotalPnl = pnl; },
       setLastPrice(price) { this.snapshotData.lastPrice = price; }
     },
     fsm: {
@@ -29,6 +33,8 @@ function createMockBot() {
       getLongPosition() { return this.longPosition; },
       getShortPosition() { return this.shortPosition; },
       manualCloseAll() { return true; },
+      forceCloseLong() { this.longForceClosed = true; return true; },
+      forceCloseShort() { this.shortForceClosed = true; return true; },
       getState() {
         return {
           buyProfitWindowStartTs: fsmState.buyProfitWindowStartTs,
@@ -61,7 +67,7 @@ test('LiveController Logic', async (t) => {
     assert.strictEqual(controller.isLiveActive(), false);
 
     // Update PnL to 150 (Crosses Threshold)
-    paperBot.pnlContext.setTotalPnl(150);
+    paperBot.pnlContext.setLongTotal(150);
     controller.onTick();
 
     assert.strictEqual(controller.isLiveActive(), true);
@@ -79,14 +85,15 @@ test('LiveController Logic', async (t) => {
     });
 
     // Start above threshold
-    paperBot.pnlContext.setTotalPnl(150);
+    paperBot.pnlContext.setLongTotal(150);
     controller.onTick();
     assert.strictEqual(controller.isLiveActive(), true);
 
     // Drop below threshold
-    paperBot.pnlContext.setTotalPnl(90);
+    paperBot.pnlContext.setLongTotal(90);
     controller.onTick();
     assert.strictEqual(controller.isLiveActive(), false);
+    assert.strictEqual(liveBot.fsm.longForceClosed, true);
   });
 
   await t.test('Scenario 3: Signal Forwarding', () => {
@@ -108,13 +115,25 @@ test('LiveController Logic', async (t) => {
     assert.strictEqual(buySignalEmitted, false);
 
     // 2. Activate
-    paperBot.pnlContext.setTotalPnl(150);
+    paperBot.pnlContext.setLongTotal(150);
     controller.onTick();
     assert.strictEqual(controller.isLiveActive(), true);
 
     // 3. Active: Should forward
     controller.forwardSignal('BUY');
     assert.strictEqual(buySignalEmitted, true);
+
+    // Short side still inactive - SELL should not forward
+    let sellSignalEmitted = false;
+    liveBot.signalBus.onSell(() => { sellSignalEmitted = true; });
+    controller.forwardSignal('SELL');
+    assert.strictEqual(sellSignalEmitted, false);
+
+    // Activate short side
+    paperBot.pnlContext.setShortTotal(150);
+    controller.onTick();
+    controller.forwardSignal('SELL');
+    assert.strictEqual(sellSignalEmitted, true);
   });
 
   await t.test('Scenario 4: Position Promotion', () => {
@@ -138,7 +157,7 @@ test('LiveController Logic', async (t) => {
     liveBot.signalBus.onBuy(() => { buySignalEmitted = true; });
 
     // Activate (PnL > 100)
-    paperBot.pnlContext.setTotalPnl(150);
+    paperBot.pnlContext.setLongTotal(150);
     controller.onTick();
 
     // Should have promoted the position via synthetic BUY signal
@@ -158,14 +177,15 @@ test('LiveController Logic', async (t) => {
     });
 
     // 1. Start Live bot (PnL above threshold)
-    paperBot.pnlContext.setTotalPnl(150);
+    paperBot.pnlContext.setShortTotal(150);
     controller.onTick();
     assert.strictEqual(controller.isLiveActive(), true);
 
     // 2. Paper PnL goes negative -> Live deactivates
-    paperBot.pnlContext.setTotalPnl(-50);
+    paperBot.pnlContext.setShortTotal(-50);
     controller.onTick();
     assert.strictEqual(controller.isLiveActive(), false);
+    assert.strictEqual(liveBot.fsm.shortForceClosed, true);
 
     // 3. SELL signal comes (only Paper takes it, Live is inactive)
     let sellSignalEmitted = false;
@@ -179,7 +199,7 @@ test('LiveController Logic', async (t) => {
     paperBot.fsm.shortPosition = { qty: 1, entryPrice: 100 };
     
     // 5. Paper SHORT becomes profitable -> PnL crosses threshold again
-    paperBot.pnlContext.setTotalPnl(150);
+    paperBot.pnlContext.setShortTotal(150);
     controller.onTick();
 
     // 6. Live should reactivate AND promote the Paper SHORT

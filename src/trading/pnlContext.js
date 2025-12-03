@@ -19,8 +19,8 @@ export function createPnlContext({ symbol }) {
 
   const isIndian = ['NIFTY', 'BANKNIFTY', 'SENSEX'].some(s => symbol.includes(s));
 
-  function getUnrealizedPnl() {
-    if (lastPrice == null) return 0;
+  function calculateUnrealizedBreakdown() {
+    if (lastPrice == null) return { longUpnl: 0, shortUpnl: 0 };
 
     let longUpnl = 0;
     if (longPosition.qty > 0) {
@@ -29,7 +29,6 @@ export function createPnlContext({ symbol }) {
 
     let shortUpnl = 0;
     if (shortPosition.qty > 0) {
-      // For Indian indices, the "short" bucket represents PE long-only
       if (isIndian) {
         shortUpnl = (lastPrice - shortPosition.avgPrice) * shortPosition.qty;
       } else {
@@ -37,6 +36,11 @@ export function createPnlContext({ symbol }) {
       }
     }
 
+    return { longUpnl, shortUpnl };
+  }
+
+  function getUnrealizedPnl() {
+    const { longUpnl, shortUpnl } = calculateUnrealizedBreakdown();
     return longUpnl + shortUpnl;
   }
 
@@ -98,8 +102,11 @@ export function createPnlContext({ symbol }) {
   }
 
   function snapshot() {
-    const unrealizedPnl = getUnrealizedPnl();
+    const { longUpnl, shortUpnl } = calculateUnrealizedBreakdown();
+    const unrealizedPnl = longUpnl + shortUpnl;
     const totalPnl = realizedPnl + unrealizedPnl;
+    const longTotal = longStats.realizedPnl + longUpnl;
+    const shortTotal = shortStats.realizedPnl + shortUpnl;
     const metrics = calculateMetrics();
 
     return {
@@ -116,6 +123,8 @@ export function createPnlContext({ symbol }) {
       realizedPnl: Number(realizedPnl.toFixed(2)),
       unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
       totalPnl: Number(totalPnl.toFixed(2)),
+      longTotalPnl: Number(longTotal.toFixed(2)),
+      shortTotalPnl: Number(shortTotal.toFixed(2)),
       // Lifetime PnL removed
       lifetimePnl: 0,
       lifetimeLongPnl: 0,

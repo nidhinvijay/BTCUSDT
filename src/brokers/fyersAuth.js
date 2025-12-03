@@ -234,9 +234,13 @@ export class FyersAuth {
     return !!this.accessToken && Date.now() < this.expiresAt;
   }
 
-  // Get current access token
-  getToken() {
-    return this.accessToken;
+  // Get current access token (prepend appId for WS compatibility unless raw requested)
+  getToken(options = {}) {
+    const raw = options?.raw;
+    if (!this.accessToken) return null;
+    if (raw) return this.accessToken;
+    if (this.accessToken.includes(':')) return this.accessToken;
+    return `${this.appId}:${this.accessToken}`;
   }
 
   getExpiry() {

@@ -101,16 +101,22 @@ export async function setupOptionsBot({
     sell: { display: null, fyersSymbol: null, ltp: null, unsubscribe: null },
   };
 
-  const priceFeed = { active: 'base' };
+  const priceFeed = { activeBuy: true, activeSell: true, activeBase: true };
 
   const feedPriceTick = (source, tick) => {
     if (!tick || typeof tick.ltp !== 'number') return;
-    if (source !== priceFeed.active) return;
     const normalizedTick = {
       ltp: tick.ltp,
       ts: tick.ts || Date.now(),
       source,
     };
+    if (
+      (source === 'buy' && !priceFeed.activeBuy) ||
+      (source === 'sell' && !priceFeed.activeSell) ||
+      (source === 'base' && !priceFeed.activeBase)
+    ) {
+      return;
+    }
     paper.pnlContext.updateMarkPrice(normalizedTick.ltp);
     live.pnlContext.updateMarkPrice(normalizedTick.ltp);
     liveController.onTick();
@@ -155,13 +161,19 @@ export async function setupOptionsBot({
     if (!info || !info.fyersSymbol) {
       detachInstrument('buy');
       detachInstrument('sell');
-      priceFeed.active = 'base';
+      priceFeed.activeBuy = false;
+      priceFeed.activeSell = false;
+      priceFeed.activeBase = true;
       return;
     }
 
     const intendedSide = info.optionType === 'PUT' ? 'sell' : 'buy';
     subscribeInstrument(intendedSide, info);
-    priceFeed.active = intendedSide;
+    if (intendedSide === 'buy') {
+      priceFeed.activeBuy = true;
+    } else {
+      priceFeed.activeSell = true;
+    }
   };
 
   if (resumeState({ paper, live }, symbol)) {
@@ -236,9 +248,7 @@ export async function setupOptionsBot({
     accessToken: () => fyersAuth.getToken(),
     appId: fyersConfig.appId,
     onTick: (tick) => {
-      if (priceFeed.active === 'base') {
-        feedPriceTick('base', tick);
-      }
+      feedPriceTick('base', tick);
     },
     logger,
   });
@@ -252,13 +262,17 @@ export async function setupOptionsBot({
     } else if (shortPos && shortPos.qty > 0) {
       activeSide = 'sell';
     }
-    if (activeSide && signalSymbolState[activeSide]?.fyersSymbol) {
-      subscribeInstrument(activeSide, {
-        fyersSymbol: signalSymbolState[activeSide].fyersSymbol,
-        display: signalSymbolState[activeSide].display,
-      });
-      priceFeed.active = activeSide;
-      logger.info(
+      if (activeSide && signalSymbolState[activeSide]?.fyersSymbol) {
+        subscribeInstrument(activeSide, {
+          fyersSymbol: signalSymbolState[activeSide].fyersSymbol,
+          display: signalSymbolState[activeSide].display,
+        });
+        if (activeSide === 'buy') {
+          priceFeed.activeBuy = true;
+        } else {
+          priceFeed.activeSell = true;
+        }
+        logger.info(
         {
           side: activeSide,
           fyersSymbol: signalSymbolState[activeSide].fyersSymbol,

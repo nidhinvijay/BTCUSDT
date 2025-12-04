@@ -67,11 +67,29 @@ export function mapIndianOptionSymbol(symbol) {
   // SENSEX final week (last Thursday, day >= 23) uses monthly format.
   let expiryCode;
   
+  // Helper to check if a date is the last Wednesday of the month (BankNifty Monthly Expiry)
+  const isMonthlyExpiry = (year, month, day) => {
+    // Month is 1-indexed in our input (01-12)
+    const d = new Date(2000 + parseInt(year), parseInt(month) - 1, parseInt(day));
+    // Check if it's a Wednesday (Day 3)
+    if (d.getDay() !== 3) return false;
+    
+    // Check if adding 7 days moves to next month
+    const nextWeek = new Date(d);
+    nextWeek.setDate(d.getDate() + 7);
+    return nextWeek.getMonth() !== d.getMonth();
+  };
+
   // Special case for SENSEX monthly expiry
   if (rootSymbol === 'SENSEX' && parseInt(dd) >= 23) {
     const month3L = MONTH_3L[mm];
     if (!month3L) return null;
     expiryCode = `${yy}${month3L}`; // Monthly format for SENSEX final week
+  } else if (rootSymbol === 'BANKNIFTY' && isMonthlyExpiry(yy, mm, dd)) {
+    // BANKNIFTY Monthly Expiry (Last Wednesday) uses MMM format
+    const month3L = MONTH_3L[mm];
+    if (!month3L) return null;
+    expiryCode = `${yy}${month3L}`;
   } else {
     // Default to weekly format (YY + MonthLetter + DD) for NIFTY, BANKNIFTY, and SENSEX weekly
     const monLetter = MONTH_LETTER[mm];
@@ -168,7 +186,6 @@ export function startTradingViewServer({ activeBots, logger }) {
 
     if (bot && typeof bot.setInstrument === 'function') {
       const instrumentInfo = normalizeInstrumentSymbol(symbol, signalInstrument);
-      logger.info({ incoming: signalInstrument, generated: instrumentInfo?.fyersSymbol }, "Normalized Instrument Symbol");
       bot.setInstrument(instrumentInfo);
       if (instrumentInfo?.optionType) {
         optionType = instrumentInfo.optionType;

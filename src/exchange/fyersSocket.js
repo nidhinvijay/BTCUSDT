@@ -164,12 +164,15 @@ export async function connectFyersSocket({ token, logPath, logger, onTick }) {
       }
       connected = false;
       connecting = false;
+
+      // Manual reconnection with fresh token
+      setTimeout(() => {
+        log(logger, 'info', null, 'Initiating manual reconnection...');
+        connectFyersSocket(lastConnectOptions).catch(() => { });
+      }, 5000);
     });
 
     socketInstance.connect();
-    if (typeof socketInstance.autoreconnect === 'function') {
-      socketInstance.autoreconnect();
-    }
   })();
 
   return connectPromise.catch((err) => {

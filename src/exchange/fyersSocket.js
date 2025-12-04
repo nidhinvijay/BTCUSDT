@@ -104,6 +104,11 @@ function handleIncomingMessage(message, logger) {
       .find((n) => Number.isFinite(n));
 
     if (symbol && Number.isFinite(ltp)) {
+      // DEBUG: Log every tick symbol to verify we are getting data
+      if (Math.random() < 0.05) { // Sample 5% to avoid flooding
+         log(logger, 'info', { symbol, ltp }, 'Received tick from FYERS');
+      }
+      
       tickHandler({
         symbol: String(symbol),
         ltp: Number(ltp),

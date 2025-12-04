@@ -63,23 +63,20 @@ export function mapIndianOptionSymbol(symbol) {
     '07': '7', '08': '8', '09': '9', '10': 'O', '11': 'N', '12': 'D',
   };
 
-  // BANKNIFTY only has MONTHLY expiries (no weekly), so use 3-letter month WITHOUT day
-  // SENSEX final week (last Thursday, day >= 23) also uses monthly format
-  // NIFTY and SENSEX weekly use single-letter month + day
+  // BANKNIFTY and NIFTY both support weekly options.
+  // SENSEX final week (last Thursday, day >= 23) uses monthly format.
   let expiryCode;
-  if (rootSymbol === 'BANKNIFTY') {
-    const month3L = MONTH_3L[mm];
-    if (!month3L) return null;
-    expiryCode = `${yy}${month3L}`; // No day for BANKNIFTY monthly
-  } else if (rootSymbol === 'SENSEX' && parseInt(dd) >= 23) {
-    // SENSEX final week (day >= 23) uses monthly format
+  
+  // Special case for SENSEX monthly expiry
+  if (rootSymbol === 'SENSEX' && parseInt(dd) >= 23) {
     const month3L = MONTH_3L[mm];
     if (!month3L) return null;
     expiryCode = `${yy}${month3L}`; // Monthly format for SENSEX final week
   } else {
+    // Default to weekly format (YY + MonthLetter + DD) for NIFTY, BANKNIFTY, and SENSEX weekly
     const monLetter = MONTH_LETTER[mm];
     if (!monLetter) return null;
-    expiryCode = `${yy}${monLetter}${dd}`; // Day included for NIFTY/SENSEX weekly
+    expiryCode = `${yy}${monLetter}${dd}`; 
   }
 
   // SENSEX options are on BSE, not NSE

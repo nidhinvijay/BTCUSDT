@@ -146,7 +146,9 @@ export async function connectFyersSocket({ token, logPath, logger, onTick }) {
       connected = true;
       connecting = false;
       log(logger, 'info', null, 'Connected to FYERS websocket');
-      if (pendingSymbols.size) {
+      
+      // Resubscribe to all desired symbols upon connection/reconnection
+      if (desiredSubscriptions.size > 0 || pendingSymbols.size > 0) {
         scheduleSubscribe(logger);
         pendingSymbols.clear();
       }

@@ -168,6 +168,7 @@ export function startTradingViewServer({ activeBots, logger }) {
 
     if (bot && typeof bot.setInstrument === 'function') {
       const instrumentInfo = normalizeInstrumentSymbol(symbol, signalInstrument);
+      logger.info({ incoming: signalInstrument, generated: instrumentInfo?.fyersSymbol }, "Normalized Instrument Symbol");
       bot.setInstrument(instrumentInfo);
       if (instrumentInfo?.optionType) {
         optionType = instrumentInfo.optionType;

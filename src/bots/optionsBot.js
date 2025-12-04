@@ -149,10 +149,6 @@ export async function setupOptionsBot({
     signalSymbolState[side].unsubscribe = subscribeToSymbol(
       info.fyersSymbol,
       (tick) => {
-        // DEBUG: Log tick reception in optionsBot
-        if (Math.random() < 0.05) {
-           logger.info({ side, symbol: tick.symbol, ltp: tick.ltp }, 'OptionsBot received tick');
-        }
         signalSymbolState[side].ltp = tick.ltp;
         feedPriceTick(side, tick);
       },
